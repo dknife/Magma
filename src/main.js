@@ -335,7 +335,7 @@ gltfLoader.load(
     camFollow.bobAmp = maxDim * 1.3;
     // 근접샷 / 원거리샷 거리(차 크기에 비례)
     camFollow.nearDist = maxDim * 2.2;
-    camFollow.farDist = maxDim * 11;
+    camFollow.farDist = maxDim * 5.5;        // 최원거리를 기존(11)의 1/2로
 
     // 차를 트랙 시작점에 배치하고 접선 방향(+X 정면)으로 정렬
     drive.curve.getPointAt(0, _pos);
@@ -468,7 +468,8 @@ function animate() {
     // 근접샷 ↔ 원거리샷을 지속 반복: 타깃까지의 거리를 사인파로 왕복시킨다.
     // (현재 시선 방향을 유지한 채 거리만 목표값으로 맞춰 줌인/줌아웃)
     camFollow.dollyT += dt;
-    const s = Math.sin(camFollow.dollyT * CAM_DOLLY_OMEGA) * 0.5 + 0.5; // 0(근접)~1(원거리)
+    const sRaw = Math.sin(camFollow.dollyT * CAM_DOLLY_OMEGA) * 0.5 + 0.5; // 0(근접)~1(원거리)
+    const s = Math.pow(sRaw, 2.4); // 근접 쪽으로 치우쳐 근접샷 비율↑
     const targetDist = camFollow.nearDist + (camFollow.farDist - camFollow.nearDist) * s;
     _dir.subVectors(camera.position, controls.target);
     const curDist = _dir.length();
