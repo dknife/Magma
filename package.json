@@ -1,0 +1,10 @@
+{
+  "name": "genesis-magma-sim",
+  "version": "0.1.0",
+  "description": "WebGL 주행 시뮬레이션 — GenesisMagma.glb 뷰어",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  }
+}

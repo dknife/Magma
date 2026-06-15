@@ -1,0 +1,15 @@
+# 의존성 / 빌드 산출물
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 임시
+*.log
+.cache/

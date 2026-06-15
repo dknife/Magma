@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Genesis Magma — 주행 시뮬레이션</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1d23; }
+    #app { width: 100vw; height: 100vh; display: block; }
+
+    #hud {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: #e6e8eb;
+      font-size: 13px;
+      line-height: 1.6;
+      background: rgba(20, 23, 28, 0.72);
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      pointer-events: none;
+      user-select: none;
+    }
+    #hud b { color: #ff6a3d; }
+    #hud .key {
+      display: inline-block;
+      min-width: 16px;
+      text-align: center;
+      padding: 1px 5px;
+      margin: 0 1px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      font-size: 11px;
+    }
+    #hud .axis-x { color: #ff5555; }
+    #hud .axis-y { color: #55ff55; }
+    #hud .axis-z { color: #5599ff; }
+
+    #loader {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: #e6e8eb;
+      background: #1a1d23;
+      transition: opacity 0.4s ease;
+      z-index: 10;
+    }
+    #loader.hidden { opacity: 0; pointer-events: none; }
+    #loader .bar-wrap {
+      width: 240px;
+      height: 4px;
+      margin-top: 16px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    #loader .bar {
+      height: 100%;
+      width: 0%;
+      background: #ff6a3d;
+      transition: width 0.2s ease;
+    }
+    #loader .pct { margin-top: 8px; font-size: 12px; color: #9aa0a6; }
+  </style>
+</head>
+<body>
+  <canvas id="app"></canvas>
+
+  <div id="hud">
+    <div><b>Genesis Magma</b> — 주행 시뮬레이션</div>
+    <div style="margin-top:6px;">
+      축: <span class="axis-x">X(빨강)</span>
+      <span class="axis-y">Y(초록, 위)</span>
+      <span class="axis-z">Z(파랑)</span>
+    </div>
+    <div style="margin-top:6px;">
+      <span class="key">좌클릭</span> 회전 ·
+      <span class="key">우클릭</span> 이동 ·
+      <span class="key">휠</span> 줌
+    </div>
+  </div>
+
+  <div id="loader">
+    <div>GenesisMagma.glb 불러오는 중…</div>
+    <div class="bar-wrap"><div class="bar" id="loader-bar"></div></div>
+    <div class="pct" id="loader-pct">0%</div>
+  </div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
