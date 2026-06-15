@@ -101,11 +101,6 @@ ground.position.y = -0.01; // 트랙 리본(y=0.02) 살짝 아래
 ground.receiveShadow = true;
 scene.add(ground);
 
-// 축 헬퍼: X(빨강), Y(초록, 위), Z(파랑)
-const axes = new THREE.AxesHelper(5);
-axes.position.y = 0.001; // z-fighting 방지
-scene.add(axes);
-
 // ---------------------------------------------------------------------------
 // 차량 리그 + 주행 상태
 // ---------------------------------------------------------------------------
