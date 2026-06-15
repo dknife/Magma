@@ -68,10 +68,96 @@
       transition: width 0.2s ease;
     }
     #loader .pct { margin-top: 8px; font-size: 12px; color: #9aa0a6; }
+
+    /* 축하 배너 */
+    #celebrate {
+      position: fixed;
+      top: 7%;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      pointer-events: none;
+      user-select: none;
+      z-index: 5;
+      animation: rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    #celebrate .flag { font-size: 34px; line-height: 1; }
+    #celebrate .title {
+      margin-top: 6px;
+      font-size: clamp(20px, 3.4vw, 40px);
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      background: linear-gradient(180deg, #ffe7a3 0%, #ffb340 45%, #ff6a3d 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      text-shadow: 0 2px 20px rgba(255, 140, 60, 0.35);
+    }
+    #celebrate .car {
+      margin-top: 4px;
+      font-size: clamp(28px, 5.2vw, 64px);
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      color: #f5f7fa;
+      text-shadow: 0 3px 26px rgba(0, 0, 0, 0.55);
+    }
+    #celebrate .sub {
+      margin-top: 10px;
+      font-size: clamp(11px, 1.5vw, 16px);
+      letter-spacing: 0.34em;
+      color: #cdd3da;
+      text-transform: uppercase;
+    }
+    #celebrate .sub b { color: #ff6a3d; }
+    #celebrate .rule {
+      width: 60%;
+      max-width: 420px;
+      height: 1px;
+      margin: 12px auto 0;
+      background: linear-gradient(90deg, transparent, #ff8a4d, transparent);
+    }
+    #celebrate .glow { animation: pulse 2.4s ease-in-out infinite; }
+    @keyframes rise {
+      from { opacity: 0; transform: translate(-50%, -16px); }
+      to   { opacity: 1; transform: translate(-50%, 0); }
+    }
+    @keyframes pulse {
+      0%, 100% { filter: drop-shadow(0 0 0 rgba(255, 140, 60, 0)); }
+      50%      { filter: drop-shadow(0 0 14px rgba(255, 140, 60, 0.55)); }
+    }
+
+    /* 하단 크레딧 */
+    #credit {
+      position: fixed;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: 13px;
+      letter-spacing: 0.14em;
+      color: #cdd3da;
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+      pointer-events: none;
+      user-select: none;
+      z-index: 5;
+    }
+    #credit b { color: #ff6a3d; font-weight: 700; }
   </style>
 </head>
 <body>
   <canvas id="app"></canvas>
+
+  <div id="celebrate">
+    <div class="flag glow">🏁</div>
+    <div class="title">CONGRATULATIONS!</div>
+    <div class="car">GENESIS MAGMA</div>
+    <div class="rule"></div>
+    <div class="sub">24 Heures du Mans · 24h 완주 <b>FINISHER</b></div>
+  </div>
+
+  <div id="credit"><b>동명대학교 게임그래픽학과</b> · Y.M. Kang</div>
 
   <div id="hud">
     <div><b>Genesis Magma</b> — 주행 시뮬레이션</div>
