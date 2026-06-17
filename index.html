@@ -161,6 +161,101 @@
     #speedo-readout #speed-val { font-size: 32px; font-weight: 800; color: #fff; }
     #speedo-readout .unit { font-size: 13px; margin-left: 5px; color: #9aa0a6; letter-spacing: 0.08em; }
 
+    /* 점수 */
+    #score {
+      position: fixed;
+      top: 16px;
+      left: 18px;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: 14px;
+      letter-spacing: 0.14em;
+      color: #cdd3da;
+      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+      pointer-events: none;
+      user-select: none;
+      z-index: 6;
+    }
+    #score b { color: #fff; font-size: 24px; font-weight: 800; margin-left: 6px; }
+    #score .best { margin-left: 18px; }
+    #score #best-val { color: #ffd24a; } /* 최고 기록(금색) */
+
+    /* 다이아몬드(생명) */
+    #diamonds {
+      position: fixed;
+      top: 48px;
+      left: 18px;
+      font-size: 18px;
+      letter-spacing: 3px;
+      color: #5fd0ff;
+      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+      pointer-events: none;
+      user-select: none;
+      z-index: 6;
+    }
+    #diamonds .lost { color: rgba(255, 255, 255, 0.3); } /* 잃은 다이아몬드(테두리만) */
+
+    /* cockpit 뷰 중앙 일시정지 버튼 */
+    #pause-btn {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.45);
+      background: rgba(20, 23, 28, 0.5);
+      color: #fff;
+      font-size: 15px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      pointer-events: auto;
+      -webkit-tap-highlight-color: transparent;
+      z-index: 7;
+    }
+    #pause-btn:active { background: rgba(255, 106, 61, 0.55); }
+
+    /* 게임오버 / 재시작 */
+    #gameover {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background: rgba(10, 12, 16, 0.74);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: #fff;
+      z-index: 20;
+    }
+    #gameover.hidden { display: none; }
+    #gameover .go-title {
+      font-size: clamp(34px, 7vw, 72px);
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      color: #ff4a2e;
+      text-shadow: 0 3px 24px rgba(255, 60, 30, 0.5);
+    }
+    #gameover .go-score { font-size: clamp(16px, 2.4vw, 24px); letter-spacing: 0.16em; color: #cdd3da; }
+    #gameover .go-score span { color: #fff; font-weight: 800; }
+    #restart-btn {
+      margin-top: 8px;
+      padding: 12px 30px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: #fff;
+      background: #ff6a3d;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+    }
+    #restart-btn:active { transform: translateY(1px); }
+
     #minimap .label {
       position: absolute;
       bottom: 5px;
@@ -186,6 +281,7 @@
 
   <div id="minimap">
     <div class="label">COCKPIT</div>
+    <button id="pause-btn" aria-label="일시정지">⏸</button>
   </div>
 
   <button id="btn-left" class="touch-btn" aria-label="왼쪽 이동">◀</button>
@@ -200,6 +296,15 @@
       <circle class="hub" cx="100" cy="110" r="6" />
     </svg>
     <div id="speedo-readout"><span id="speed-val">0</span><span class="unit">km/h</span></div>
+  </div>
+
+  <div id="score">SCORE<b id="score-val">0</b><span class="best">BEST<b id="best-val">0</b></span></div>
+  <div id="diamonds">◆◆◆◆◆</div>
+
+  <div id="gameover" class="hidden">
+    <div class="go-title">GAME OVER</div>
+    <div class="go-score">SCORE <span>0</span></div>
+    <button id="restart-btn">RESTART</button>
   </div>
 
   <div id="loader">
