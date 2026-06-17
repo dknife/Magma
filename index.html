@@ -224,14 +224,15 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      gap: 14px;
-      background: rgba(10, 12, 16, 0.74);
+      justify-content: space-between;
+      padding: 7vh 0;
+      background: transparent; /* 배경은 3D 패스에서 이미 어둡게 처리됨 */
       font-family: "Segoe UI", system-ui, sans-serif;
       color: #fff;
       z-index: 20;
     }
     #gameover.hidden { display: none; }
+    #gameover .go-head { display: flex; flex-direction: column; align-items: center; gap: 10px; }
     #gameover .go-title {
       font-size: clamp(34px, 7vw, 72px);
       font-weight: 900;
@@ -302,8 +303,10 @@
   <div id="diamonds">◆◆◆◆◆</div>
 
   <div id="gameover" class="hidden">
-    <div class="go-title">GAME OVER</div>
-    <div class="go-score">SCORE <span>0</span></div>
+    <div class="go-head">
+      <div class="go-title">GAME OVER</div>
+      <div class="go-score">SCORE <span>0</span></div>
+    </div>
     <button id="restart-btn">RESTART</button>
   </div>
 
