@@ -21,7 +21,8 @@ npm start        # = node server.js
   - 곡률 기반 **slow-in / fast-out** 속도 제어.
   - 접지력(grip) 한계가 있는 추격(pursuit) 조향 → 급코너에서 관성 이탈.
   - 감속 시 후면 **브레이크등** 점등.
-- **카메라**: 차량 추적 + 높이 진동 + 근접/원거리 반복(시네마틱), OrbitControls 회전 가능.
+- **카메라**: 차량 추적 + 높이 진동 + 근접/원거리 반복(시네마틱), OrbitControls 회전 가능. 카메라는 조종석보다 진행 방향 앞으로 나가지 않게 제한.
+- **미니맵**: 우측 상단에 차 위에서 내려다보는 직교 카메라 2차 패스. 화면 위쪽이 항상 차의 진행 방향(헤딩-업).
 - **환경**: 절차적 Sky-box(짙은 청색), 차량을 따라다니는 태양광 그림자.
 
 ## 에셋 압축
@@ -37,6 +38,24 @@ npm start        # = node server.js
 npx @gltf-transform/cli optimize meshes/GenesisMagma.glb meshes/GenesisMagma.opt.glb \
   --compress draco --texture-compress webp --texture-size 1024
 ```
+
+트랙 중심에 배치하는 `Raceway.glb`(16.0 MB)도 같은 방식으로 `Raceway.opt.glb`(약 1.54 MB)로 압축해 사용합니다.
+
+```bash
+npx @gltf-transform/cli optimize meshes/Raceway.glb meshes/Raceway.opt.glb \
+  --compress draco --texture-compress webp --texture-size 2048
+```
+
+레이스웨이는 단위 스케일로 정규화돼 있어, 로드 시 트랙 인필드 크기에 맞춰 스케일링하고 코스 중심(원점)에 바닥 안착시켜 배치합니다.
+
+교통 차량 `Toyota.glb`(13.1 MB)도 같은 방식으로 `Toyota.opt.glb`(약 0.48 MB)로 압축해 사용합니다.
+
+```bash
+npx @gltf-transform/cli optimize meshes/Toyota.glb meshes/Toyota.opt.glb \
+  --compress draco --texture-compress webp --texture-size 1024
+```
+
+Toyota는 메인 차량과 비슷한 크기로 정규화한 뒤 한 번만 로드하고, 같은 메쉬를 `TOYOTA_COUNT`(기본 20)대 복제(geometry/material 공유)해 트랙 곡선 전체에 균등하게 흩뿌립니다. 각 대는 곡선을 따라 **독립적으로** 주행하며 속도는 주인공 레이싱 카의 `TOYOTA_SPEED_RATIO`(기본 80%)입니다. 주행선에서의 횡방향 오프셋은 차폭 `w` 기준 `[-3w, 3w]` 균등분포로 무작위 결정해 한 줄로 늘어서지 않게 했습니다.
 
 ## 구조
 
