@@ -129,6 +129,14 @@ const drive = {
   aimAhead: 0,    // 추격 목표를 곡선상 얼마나 앞에 둘지(u 단위)
   prevSpeed: 0,   // 직전 프레임 속도(감속 감지용)
   active: false,
+  // 충돌 → 스핀 → 정지 → 곡선 복귀 상태머신
+  state: 'drive',                 // 'drive' | 'spin' | 'recover'
+  omega: 0,                       // 스핀 각속도(rad/s, +반시계 / -시계)
+  slideSpeed: 0,                  // 스핀 중 미끄러지는 속도(월드 단위/초)
+  slideDir: new THREE.Vector3(),  // 미끄러지는 방향(충돌 순간 고정)
+  recoverU: 0,                    // 복귀 목표 곡선 파라미터
+  recoverFrac: 0,                 // 복귀 순항 속도 비율 — 모델 로드 후 설정
+  cooldown: 0,                    // 복귀 후 재충돌 방지 잔여 시간(s)
 };
 
 // 브레이크등(감속 시 후면 적색 발광)
@@ -144,15 +152,34 @@ const BRAKE_SAMPLES = 6;        // 전방 곡률 스캔 표본 수
 const SPEED_BRAKE = 3.2;        // 감속 강도(코너 진입, 강하게)
 const SPEED_ACCEL = 1.1;        // 가속 강도(코너 탈출 fast-out, 부드럽게)
 
+// 충돌/스핀/복귀 튜닝
+const SPIN_OMEGA0 = 5.0;        // 충돌 직후 회전 각속도(rad/s)
+const SPIN_OMEGA_DECAY = 4.0;   // 회전 감쇠율(1/s) — 제자리 스핀이 잦아드는 속도
+const SPIN_OMEGA_STOP = 0.3;    // 이 각속도 미만이면 스핀 종료로 보고 복귀
+const SPIN_SPEED_DECAY = 30.0;  // 진행 속도 감쇠율(1/s) — 충돌 직후 즉시 0에 수렴
+const RECOVER_SPEED_FRAC = 0.15;       // 주인공 복귀 주행 속도(maxSpeed 비율) — 천천히 이동
+const TRAFFIC_RECOVER_SPEED_FRAC = 0.04;// 상대 차 복귀 속도(매우 느리게 — 주인공과 충돌 회피)
+const RECOVER_TURN = 3.0;       // 복귀 시 선회 각속도(rad/s)
+const RECOVER_ALIGN = 0.12;     // 주행선 방향 일치 판정 허용 오차(rad)
+const RECOVER_ACCEL_RATE = 1.5; // 복귀 중 정지(≈0)→순항 속도 가속(1/s) — 전이 연속성
+const COLLISION_COOLDOWN = 1.5; // 복귀 후 재충돌 방지 시간(s)
+const RESUME_ACCEL = 0.5;       // 복귀 후 최대속도까지 서서히 가속(1/s)
+const AVOID_RATE = 2.5;         // 교통 차량 회피 차선 변경 부드러움(1/s)
+let collisionDist = 0;          // 충돌 판정 거리 — 모델 로드 후 설정
+let recoverArrive = 0;          // 곡선 도달 판정 거리 — 모델 로드 후 설정
+let avoidRadius = 0;            // 교통 차량이 레이싱 카를 회피하기 시작하는 거리
+let avoidClearance = 0;         // 회피 시 확보할 횡방향 간격
+
 // 카메라 추적 + 높이 진동 + 근접/원거리 반복
 const CAM_BOB_OMEGA = 1.1;      // 상하 진동 각속도(rad/s)
 const CAM_DOLLY_OMEGA = 0.45;   // 근접↔원거리 왕복 각속도(rad/s) — 더 느린 주기
 const COCKPIT_FWD_RATIO = 0.10; // 차 중심 기준 조종석의 전방 위치(차 길이 비율)
 
-// 미니맵(우측 상단): 차 위에서 내려다보는 직교 카메라. 화면 위 = 차 진행 방향.
+// 미니맵(화면 중앙 상단): 조종석 전방 시점. 가로:세로 = 2.5:1.
 // 픽셀 크기·여백은 index.html 의 #minimap 프레임과 일치시킨다.
-const MINIMAP_SIZE = 200;       // 미니맵 한 변(px)
-const MINIMAP_MARGIN = 16;      // 화면 가장자리 여백(px)
+const MINIMAP_W = 320;          // 미니맵 너비(px)
+const MINIMAP_H = 128;          // 미니맵 높이(px) — 320:128 = 2.5:1
+const MINIMAP_MARGIN = 16;      // 화면 상단 여백(px)
 let miniCam = null;             // 조종석 전방 시점 카메라(모델 로드 후 생성)
 const camFollow = {
   prev: new THREE.Vector3(),
@@ -177,6 +204,8 @@ const _dir = new THREE.Vector3();
 const _aim = new THREE.Vector3();
 const _lat = new THREE.Vector3();          // 교통 차량 차선 오프셋(횡방향)
 const _up = new THREE.Vector3(0, 1, 0);
+const _near = new THREE.Vector3();         // 곡선 최근접점 탐색용
+const _obstacles = [];                     // 회피 대상(복귀 중 차량) 위치 모음 — 매 프레임 갱신
 
 // 곡선 위 u 지점의 국소 곡률 → 허용(목표) 속도. 급할수록 minSpeed에 가까움.
 function cornerSpeedLimit(u) {
@@ -185,6 +214,138 @@ function cornerSpeedLimit(u) {
   drive.curve.getTangentAt(((a + CORNER_EPS) % 1), _tanAhead);
   const sharp = Math.min(_tan.angleTo(_tanAhead) / TURN_MAX, 1); // 0=직선,1=급코너
   return drive.maxSpeed + (drive.minSpeed - drive.maxSpeed) * sharp;
+}
+
+// ---------------------------------------------------------------------------
+// 충돌 → 스핀 → 정지 → 곡선 복귀 상태머신 (주인공/교통 차량 공용)
+// ---------------------------------------------------------------------------
+// rec 는 상태 필드(state/omega/slideSpeed/slideDir/heading/recoverU)를 가진 객체,
+// obj 는 실제로 움직일 Object3D(주인공 car 또는 교통 rig).
+
+// 곡선 위에서 점 p 에 가장 가까운 진행 파라미터 u 를 표본 탐색으로 찾는다.
+function nearestU(p) {
+  const N = 240;
+  let bestU = 0, bestD = Infinity;
+  for (let i = 0; i < N; i++) {
+    const u = i / N;
+    drive.curve.getPointAt(u, _near);
+    const dx = _near.x - p.x, dz = _near.z - p.z;
+    const d = dx * dx + dz * dz;
+    if (d < bestD) { bestD = d; bestU = u; }
+  }
+  return bestU;
+}
+
+// 스핀 시작: 현재 진행 속도를 유지한 채 회전만 부여(주행 제어 상실).
+function startSpin(rec, omega, heading, speed) {
+  rec.state = 'spin';
+  rec.omega = omega;
+  rec.heading = heading;
+  rec.slideSpeed = speed;
+  rec.slideDir.set(Math.cos(heading), 0, -Math.sin(heading)); // 충돌 순간 진행 방향 고정
+}
+
+// 스핀 한 프레임: 진행 속도는 충돌 직후 즉시 0에 수렴(거의 미끄러지지 않음)하고,
+// 차는 제자리에서 회전하며 회전 속도가 서서히 줄어든다. 회전이 충분히 잦아들면
+// 스핀 종료로 보고 true 반환 → 복귀 단계로.
+function stepSpin(rec, obj, dt) {
+  // 진행 속도 즉시 0 수렴
+  rec.slideSpeed *= Math.max(0, 1 - SPIN_SPEED_DECAY * dt);
+  obj.position.x += rec.slideDir.x * rec.slideSpeed * dt;
+  obj.position.z += rec.slideDir.z * rec.slideSpeed * dt;
+  // 제자리 회전 + 회전 감쇠
+  rec.heading += rec.omega * dt;
+  obj.rotation.y = rec.heading;
+  rec.omega *= Math.max(0, 1 - SPIN_OMEGA_DECAY * dt);
+  return Math.abs(rec.omega) < SPIN_OMEGA_STOP;
+}
+
+// 정지 후 가장 가까운 곡선 지점을 복귀 목표로 잡고 복귀 단계로 진입.
+function enterRecover(rec, obj) {
+  rec.recoverU = nearestU(obj.position);
+  rec.state = 'recover';
+}
+
+// 복귀 한 프레임: 주행선 방향으로 차를 서서히 전진시키며 진행 방향(orientation)을
+// 주행선 접선에 맞춘다. 병합 목표점(recoverU)도 같은 속도로 주행선을 따라 전진시켜,
+// 차가 선 위로 모이면서 방향이 정렬되게 한다. 주행선에 충분히 가깝고(횡오프셋 작음)
+// 방향이 일치하면 true(→ 가속하며 정상 주행 재개).
+function stepRecover(rec, obj, dt) {
+  // 진행 속도를 정지(≈0)에서 복귀 순항 속도까지 연속적으로 끌어올린다(전이 시 불연속 방지).
+  // 순항 속도 비율은 차량별(주인공/상대)로 다르다 — 상대는 매우 느리게 복귀.
+  const cruise = drive.maxSpeed * rec.recoverFrac;
+  rec.slideSpeed += (cruise - rec.slideSpeed) * Math.min(1, dt * RECOVER_ACCEL_RATE);
+  const rs = rec.slideSpeed;
+  // 병합 목표를 주행선 방향으로 서서히 전진
+  rec.recoverU = (rec.recoverU + (rs * dt) / drive.length) % 1;
+  drive.curve.getPointAt(rec.recoverU, _pos);
+  drive.curve.getTangentAt(rec.recoverU, _tan);
+  const lineHeading = Math.atan2(-_tan.z, _tan.x);
+
+  // 주행선상 약간 앞을 겨냥 → 차를 선 위로 끌어들이며 진행 방향을 맞춤
+  drive.curve.getPointAt((rec.recoverU + drive.aimAhead) % 1, _aim);
+  const desired = Math.atan2(-(_aim.z - obj.position.z), _aim.x - obj.position.x);
+  let dAng = desired - rec.heading;
+  dAng = Math.atan2(Math.sin(dAng), Math.cos(dAng));
+  const maxTurn = RECOVER_TURN * dt;
+  rec.heading += Math.max(-maxTurn, Math.min(maxTurn, dAng));
+  obj.rotation.y = rec.heading;
+
+  // 차의 진행 방향으로 서서히 전진
+  obj.position.x += Math.cos(rec.heading) * rs * dt;
+  obj.position.z += -Math.sin(rec.heading) * rs * dt;
+
+  // 완료 판정: 주행선에 충분히 가깝고 진행 방향이 접선과 일치
+  _lat.crossVectors(_up, _tan).normalize();
+  const latOffset = (obj.position.x - _pos.x) * _lat.x + (obj.position.z - _pos.z) * _lat.z;
+  let hAng = lineHeading - rec.heading;
+  hAng = Math.atan2(Math.sin(hAng), Math.cos(hAng));
+  return Math.abs(latOffset) < recoverArrive && Math.abs(hAng) < RECOVER_ALIGN;
+}
+
+// 주인공 복귀 완료 → 위치·방향·속도를 그대로 이어받아 정상 주행 재개(스냅 없음).
+function resumeHero() {
+  drive.u = nearestU(car.position);  // 현재 위치 기준 곡선 파라미터(위치 스냅 안 함)
+  drive.speed = drive.slideSpeed;    // 복귀 순항 속도에서 연속적으로 이어받음
+  drive.prevSpeed = drive.speed;
+  drive.cooldown = COLLISION_COOLDOWN;
+  drive.state = 'drive';
+  // heading 은 stepRecover 에서 이미 접선에 정렬됨 → 그대로 유지.
+  // 이후 slow-in/fast-out 이 서서히 최대속도까지 가속.
+}
+
+// 교통 차량 복귀 완료 → 현재 위치·속도를 그대로 이어받아 곡선 추종 재개(불연속 제거).
+function resumeTraffic(t) {
+  const u = nearestU(t.rig.position);
+  drive.curve.getPointAt(u, _pos);
+  drive.curve.getTangentAt(u, _tan);
+  _lat.crossVectors(_up, _tan).normalize();
+  t.u = u;
+  // 현재 횡오프셋을 그대로 반영 → 위치 연속(이후 자기 차선으로 서서히 복귀)
+  t.curLateral = (t.rig.position.x - _pos.x) * _lat.x + (t.rig.position.z - _pos.z) * _lat.z;
+  // 곡선 추종 속도(= drive.speed·ratio·ramp)가 현재 속도와 이어지도록 ramp 산출
+  const cruiseU = drive.speed * TOYOTA_SPEED_RATIO;
+  t.ramp = Math.max(0.05, Math.min(1, t.slideSpeed / Math.max(cruiseU, 1e-3)));
+  t.cooldown = COLLISION_COOLDOWN;
+  t.state = 'drive';
+}
+
+// 주인공 ↔ 상대 충돌 검사. 둘 다 정상 주행(쿨다운 해제) 상태일 때만 발동.
+// 상대가 주인공의 오른쪽이면 주인공 반시계(+)/상대 시계(-), 왼쪽이면 그 반대.
+function checkCollisions() {
+  if (drive.state !== 'drive' || drive.cooldown > 0) return;
+  for (const t of traffic) {
+    if (t.state !== 'drive' || t.cooldown > 0) continue;
+    const dx = t.rig.position.x - car.position.x;
+    const dz = t.rig.position.z - car.position.z;
+    if (dx * dx + dz * dz > collisionDist * collisionDist) continue;
+    // 주인공 기준 오른쪽 벡터 = (sinθ, 0, cosθ); 양수면 상대가 오른쪽.
+    const side = dx * Math.sin(drive.heading) + dz * Math.cos(drive.heading);
+    const heroCCW = side > 0 ? 1 : -1; // 우측 충돌 → 반시계(+)
+    startSpin(drive, heroCCW * SPIN_OMEGA0, drive.heading, drive.speed);
+    startSpin(t, -heroCCW * SPIN_OMEGA0, t.heading, drive.speed * TOYOTA_SPEED_RATIO * t.ramp);
+    return; // 프레임당 1건만 처리
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -372,10 +533,22 @@ function loadToyota(refSize, count) {
         rig.add(toy.clone());
         scene.add(rig);
         // 주행선 횡방향 오프셋: [-3w, 3w] 균등분포로 무작위 결정.
+        const lateral = (Math.random() * 2 - 1) * 3 * w;
         traffic.push({
           rig,
           u: i / count,                        // 곡선 위 균등 분포
-          lateral: (Math.random() * 2 - 1) * 3 * w,
+          lateral,                             // 기본 차선 오프셋(횡방향)
+          curLateral: lateral,                 // 현재 적용 오프셋(회피로 일시 변동)
+          ramp: 1,                             // 주행 속도 배율(재출발 시 0.1→1)
+          // 충돌 → 스핀 → 정지 → 복귀 상태머신
+          state: 'drive',                      // 'drive' | 'spin' | 'recover'
+          heading: 0,                          // 현재 진행 방향(rad)
+          omega: 0,                            // 스핀 각속도(rad/s)
+          slideSpeed: 0,                       // 스핀 중 미끄러짐 속도
+          slideDir: new THREE.Vector3(),       // 미끄러짐 방향(충돌 순간 고정)
+          recoverU: 0,                         // 복귀 목표 곡선 파라미터
+          recoverFrac: TRAFFIC_RECOVER_SPEED_FRAC, // 상대 차는 매우 느리게 복귀
+          cooldown: 0,                         // 재충돌 방지 잔여 시간(s)
         });
       }
       console.log(`[Toyota] 교통 차량 ${count}대 배치 완료(속도 ${Math.round(TOYOTA_SPEED_RATIO * 100)}%)`);
@@ -446,7 +619,15 @@ gltfLoader.load(
     drive.aimAhead = (maxDim * 9) / drive.length; // 추격 목표를 차 앞 ~9 차길이
     drive.u = 0;
     drive.prevSpeed = drive.speed;
+    drive.recoverFrac = RECOVER_SPEED_FRAC; // 주인공 복귀 속도
     drive.active = true;
+
+    // 충돌 판정/곡선 도달 거리(차 크기 비례)
+    collisionDist = maxDim * 0.95; // 차 길이 ≈ maxDim → 접촉 시점에 발동
+    recoverArrive = maxDim * 0.3;
+    // 교통 차량 회피: 이 거리 안에서 횡방향 간격을 확보하며 비켜간다
+    avoidRadius = maxDim * 4.0;
+    avoidClearance = maxDim * 1.2; // collisionDist 보다 크게 → 확실히 비켜감
 
     // 후면 브레이크등(차 로컬 -X = 뒤). 좌/우 2개 + 적색 글로우 라이트.
     brakeMaterial = new THREE.MeshStandardMaterial({
@@ -498,8 +679,8 @@ gltfLoader.load(
     controls.update();
 
     // 미니맵 카메라: 조종석에서 앞을 바라보는 원근(perspective) 카메라.
-    // 정사각 미니맵이므로 aspect=1. 위치·방향은 매 프레임 차에 맞춰 갱신한다.
-    miniCam = new THREE.PerspectiveCamera(90, 1, maxDim * 0.05, 2000); // 넓은 시야각
+    // 가로:세로 2.5:1 → aspect = MINIMAP_W/MINIMAP_H. 위치·방향은 매 프레임 갱신.
+    miniCam = new THREE.PerspectiveCamera(72, MINIMAP_W / MINIMAP_H, maxDim * 0.05, 2000);
     camFollow.eyeHeight = size.y * 0.95;      // 조종석 눈높이(조금 더 높게)
     // 차체에 시야가 막히지 않도록 카메라를 차 앞코(앞 절반 끝 ≈ 0.5·size.x)
     // 너머로 빼 전방 상황이 보이게 한다.
@@ -547,55 +728,68 @@ function animate() {
   const dt = clock.getDelta();
 
   if (drive.active) {
-    // --- slow-in / fast-out 속도 ---
-    // 전방 브레이킹 구간(속도 비례)을 스캔해 가장 낮은 허용 속도를 목표로 삼는다.
-    //  · 현재 위치 한계 포함 → apex 에서 느림 유지
-    //  · 전방 표본 → 코너 '진입 전' 미리 감속(slow-in)
-    //  · apex 통과 후 출구가 펴지면 목표가 올라가 가속(fast-out)
-    const brakeU = (drive.speed * BRAKE_TIME) / drive.length;
-    let targetSpeed = cornerSpeedLimit(drive.u);
-    for (let i = 1; i <= BRAKE_SAMPLES; i++) {
-      targetSpeed = Math.min(
-        targetSpeed,
-        cornerSpeedLimit(drive.u + brakeU * (i / BRAKE_SAMPLES))
-      );
-    }
-    // 비대칭 반응: 감속은 강하게(slow-in), 가속은 부드럽게(fast-out)
-    const rate = targetSpeed < drive.speed ? SPEED_BRAKE : SPEED_ACCEL;
-    drive.speed += (targetSpeed - drive.speed) * Math.min(1, dt * rate);
+    let decelNorm = 0; // 브레이크등 세기(스핀/복귀 중엔 0)
 
-    // --- 브레이크등: 감속도(속도 감소율)에 비례해 후면을 적색 발광 ---
-    const accel = (drive.speed - drive.prevSpeed) / Math.max(dt, 1e-4);
-    drive.prevSpeed = drive.speed;
-    const decelNorm = Math.min(Math.max(-accel, 0) / drive.maxSpeed, 1); // 0~1
+    if (drive.state === 'drive') {
+      // --- slow-in / fast-out 속도 ---
+      // 전방 브레이킹 구간(속도 비례)을 스캔해 가장 낮은 허용 속도를 목표로 삼는다.
+      //  · 현재 위치 한계 포함 → apex 에서 느림 유지
+      //  · 전방 표본 → 코너 '진입 전' 미리 감속(slow-in)
+      //  · apex 통과 후 출구가 펴지면 목표가 올라가 가속(fast-out)
+      const brakeU = (drive.speed * BRAKE_TIME) / drive.length;
+      let targetSpeed = cornerSpeedLimit(drive.u);
+      for (let i = 1; i <= BRAKE_SAMPLES; i++) {
+        targetSpeed = Math.min(
+          targetSpeed,
+          cornerSpeedLimit(drive.u + brakeU * (i / BRAKE_SAMPLES))
+        );
+      }
+      // 비대칭 반응: 감속은 강하게(slow-in), 가속은 부드럽게(fast-out)
+      const rate = targetSpeed < drive.speed ? SPEED_BRAKE : SPEED_ACCEL;
+      drive.speed += (targetSpeed - drive.speed) * Math.min(1, dt * rate);
+
+      // 감속도(속도 감소율) → 브레이크등 세기
+      const accel = (drive.speed - drive.prevSpeed) / Math.max(dt, 1e-4);
+      drive.prevSpeed = drive.speed;
+      decelNorm = Math.min(Math.max(-accel, 0) / drive.maxSpeed, 1); // 0~1
+
+      // --- 기준 목표를 곡선 위에서 전진(닫힌 곡선이라 u>1 이면 0으로 순환) ---
+      drive.u = (drive.u + (drive.speed * dt) / drive.length) % 1;
+
+      // --- 관성 주행(추격 모델): 곡선 위 앞 지점을 목표로 조향하되,
+      //     조향 각속도를 접지력(grip)으로 제한 → 급코너에선 못 꺾고 밖으로 밀림 ---
+      drive.curve.getPointAt((drive.u + drive.aimAhead) % 1, _aim);
+      const desiredHeading = Math.atan2(
+        -(_aim.z - car.position.z),
+        _aim.x - car.position.x
+      );
+      // 목표와의 각도차를 [-π, π]로 래핑
+      let dAng = desiredHeading - drive.heading;
+      dAng = Math.atan2(Math.sin(dAng), Math.cos(dAng));
+      // 접지력 한계 → 최대 선회 각속도 ω = grip / v (속도가 빠를수록 덜 꺾임)
+      const maxTurn = (drive.grip / Math.max(drive.speed, 1e-3)) * dt;
+      drive.heading += Math.max(-maxTurn, Math.min(maxTurn, dAng));
+
+      // 실제 진행 방향으로 전진(곡선이 아니라 차의 heading을 따라 이동)
+      const fx = Math.cos(drive.heading);
+      const fz = -Math.sin(drive.heading);
+      car.position.x += fx * drive.speed * dt;
+      car.position.z += fz * drive.speed * dt;
+      // 차의 +X(앞코)를 실제 진행 방향에 정렬(밀릴 때 라인 바깥을 향함)
+      car.rotation.y = drive.heading;
+    } else if (drive.state === 'spin') {
+      // 충돌 스핀: 진행 속도를 유지한 채 미끄러지며 회전 → 멈추면 복귀로
+      if (stepSpin(drive, car, dt)) enterRecover(drive, car);
+    } else { // 'recover'
+      // 정지 후 원래 주행 곡선으로 복귀 → 도달하면 정상 주행 재개
+      if (stepRecover(drive, car, dt)) resumeHero();
+    }
+    if (drive.cooldown > 0) drive.cooldown -= dt;
+
+    // --- 브레이크등: 감속도에 비례해 후면을 적색 발광(스핀/복귀 중엔 서서히 소등) ---
     brake.glow += (decelNorm - brake.glow) * Math.min(1, dt * 10); // 부드럽게
     if (brakeMaterial) brakeMaterial.emissiveIntensity = brake.glow * 3.5;
     if (brakeLight) brakeLight.intensity = brake.glow * brakeLight.userData.peak;
-
-    // --- 기준 목표를 곡선 위에서 전진(닫힌 곡선이라 u>1 이면 0으로 순환) ---
-    drive.u = (drive.u + (drive.speed * dt) / drive.length) % 1;
-
-    // --- 관성 주행(추격 모델): 곡선 위 앞 지점을 목표로 조향하되,
-    //     조향 각속도를 접지력(grip)으로 제한 → 급코너에선 못 꺾고 밖으로 밀림 ---
-    drive.curve.getPointAt((drive.u + drive.aimAhead) % 1, _aim);
-    const desiredHeading = Math.atan2(
-      -(_aim.z - car.position.z),
-      _aim.x - car.position.x
-    );
-    // 목표와의 각도차를 [-π, π]로 래핑
-    let dAng = desiredHeading - drive.heading;
-    dAng = Math.atan2(Math.sin(dAng), Math.cos(dAng));
-    // 접지력 한계 → 최대 선회 각속도 ω = grip / v (속도가 빠를수록 덜 꺾임)
-    const maxTurn = (drive.grip / Math.max(drive.speed, 1e-3)) * dt;
-    drive.heading += Math.max(-maxTurn, Math.min(maxTurn, dAng));
-
-    // 실제 진행 방향으로 전진(곡선이 아니라 차의 heading을 따라 이동)
-    const fx = Math.cos(drive.heading);
-    const fz = -Math.sin(drive.heading);
-    car.position.x += fx * drive.speed * dt;
-    car.position.z += fz * drive.speed * dt;
-    // 차의 +X(앞코)를 실제 진행 방향에 정렬(밀릴 때 라인 바깥을 향함)
-    car.rotation.y = drive.heading;
 
     // 카메라가 차를 따라가도록 이동량만큼 평행이동(궤도·줌은 사용자 제어 유지)
     _delta.subVectors(car.position, camFollow.prev);
@@ -628,18 +822,50 @@ function animate() {
     sun.target.position.copy(car.position);
     sun.target.updateMatrixWorld();
 
-    // --- 교통 차량(Toyota): 곡선을 따라 각자 주행(주인공 속도의 80%) ---
-    // 닫힌 곡선을 그대로 따르므로 항상 트랙 위에 있고, 진행값 u 만 전진시킨다.
-    // 차선(lateral) 오프셋은 접선의 수직(횡)방향으로 더해 한 줄 행렬을 피한다.
+    // 복귀 중인 차량(주행선으로 돌아오는 차)만 회피 대상으로 수집.
+    // 주인공·교통 어느 쪽이든 'recover' 상태면 다른 차들이 비켜준다.
+    _obstacles.length = 0;
+    if (drive.state === 'recover') _obstacles.push(car.position);
+    for (const o of traffic) if (o.state === 'recover') _obstacles.push(o.rig.position);
+
+    // --- 교통 차량(Toyota): 상태머신(주행 / 충돌 스핀 / 곡선 복귀) ---
+    // 'drive' 는 곡선 추종(주인공 속도의 80%), 'spin'/'recover' 는 주인공과 동일.
     const trafficDu = (drive.speed * TOYOTA_SPEED_RATIO * dt) / drive.length;
     for (const t of traffic) {
-      t.u = (t.u + trafficDu) % 1;
-      drive.curve.getPointAt(t.u, _pos);
-      drive.curve.getTangentAt(t.u, _tan);
-      _lat.crossVectors(_up, _tan).normalize().multiplyScalar(t.lateral);
-      t.rig.position.set(_pos.x + _lat.x, 0, _pos.z + _lat.z);
-      t.rig.rotation.y = Math.atan2(-_tan.z, _tan.x); // +X 앞코를 진행 방향에 정렬
+      if (t.state === 'drive') {
+        // 재출발 후 서서히 가속(ramp 0.1→1)
+        t.ramp += (1 - t.ramp) * Math.min(1, dt * RESUME_ACCEL);
+        t.u = (t.u + trafficDu * t.ramp) % 1;
+        drive.curve.getPointAt(t.u, _pos);
+        drive.curve.getTangentAt(t.u, _tan);
+        _lat.crossVectors(_up, _tan).normalize(); // 횡방향 단위벡터
+
+        // 복귀 중인 차량이 가까우면 횡방향 오프셋을 조정해 비켜준다(복귀 중에만 발동).
+        let targetLat = t.lateral;
+        for (const op of _obstacles) {
+          const odx = op.x - _pos.x, odz = op.z - _pos.z;
+          if (odx * odx + odz * odz >= avoidRadius * avoidRadius) continue;
+          const obsSide = odx * _lat.x + odz * _lat.z; // 회피 대상의 횡방향 위치
+          if (Math.abs(targetLat - obsSide) < avoidClearance) {
+            // 대상에서 avoidClearance 만큼 떨어진(원래 차선과 같은 쪽) 위치로
+            targetLat = obsSide + (t.lateral >= obsSide ? 1 : -1) * avoidClearance;
+          }
+        }
+        t.curLateral += (targetLat - t.curLateral) * Math.min(1, dt * AVOID_RATE);
+
+        t.rig.position.set(_pos.x + _lat.x * t.curLateral, 0, _pos.z + _lat.z * t.curLateral);
+        t.heading = Math.atan2(-_tan.z, _tan.x); // +X 앞코를 진행 방향에 정렬
+        t.rig.rotation.y = t.heading;
+      } else if (t.state === 'spin') {
+        if (stepSpin(t, t.rig, dt)) enterRecover(t, t.rig);
+      } else { // 'recover'
+        if (stepRecover(t, t.rig, dt)) resumeTraffic(t);
+      }
+      if (t.cooldown > 0) t.cooldown -= dt;
     }
+
+    // --- 충돌 검사(주인공 ↔ 상대) → 양쪽을 서로 반대로 스핀시킨다 ---
+    checkCollisions();
   }
 
   controls.update();
@@ -647,7 +873,8 @@ function animate() {
   // 카메라가 조종석보다 앞(진행 방향)으로 나가지 않도록 제한한다.
   // 진행축 f=(cosθ,0,-sinθ) 위에서 카메라가 조종석 지점보다 앞서 있으면
   // 그 초과분만큼 뒤로 끌어당겨 조종석 평면에 머무르게 한다(높이는 유지).
-  if (drive.active) {
+  // (스핀 중에는 heading 이 빠르게 돌아 클램프가 흔들리므로 정상 주행일 때만.)
+  if (drive.active && drive.state === 'drive') {
     const fx = Math.cos(drive.heading);
     const fz = -Math.sin(drive.heading);
     const cx = car.position.x + fx * camFollow.cockpitFwd;
@@ -661,7 +888,7 @@ function animate() {
 
   renderer.render(scene, camera);
 
-  // --- 미니맵: 조종석에서 앞을 바라보는 두 번째 패스(우측 상단) ---
+  // --- 미니맵: 조종석에서 앞을 바라보는 두 번째 패스(화면 중앙 상단, 2.5:1) ---
   // 원근 카메라를 조종석 위치(차 중심에서 진행 방향 앞·눈높이)에 두고 진행
   // 방향으로 약간(8도) 내려다보게 해 노면이 보이는 1인칭 전방 시점을 그린다.
   if (miniCam && camFollow.ready) {
@@ -681,11 +908,11 @@ function animate() {
     );
 
     const w = window.innerWidth, h = window.innerHeight;
-    const mx = w - MINIMAP_SIZE - MINIMAP_MARGIN;
-    const my = h - MINIMAP_SIZE - MINIMAP_MARGIN; // 뷰포트 원점은 좌하단 → 상단 배치
+    const mx = (w - MINIMAP_W) / 2;               // 화면 중앙(가로)
+    const my = h - MINIMAP_H - MINIMAP_MARGIN;    // 뷰포트 원점은 좌하단 → 상단 배치
     renderer.setScissorTest(true);                // 미니맵 영역만 클리어/렌더
-    renderer.setViewport(mx, my, MINIMAP_SIZE, MINIMAP_SIZE);
-    renderer.setScissor(mx, my, MINIMAP_SIZE, MINIMAP_SIZE);
+    renderer.setViewport(mx, my, MINIMAP_W, MINIMAP_H);
+    renderer.setScissor(mx, my, MINIMAP_W, MINIMAP_H);
     renderer.render(scene, miniCam);
     renderer.setScissorTest(false);               // 원상 복구(다음 프레임 메인 렌더)
     renderer.setViewport(0, 0, w, h);

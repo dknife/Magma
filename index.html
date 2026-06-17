@@ -39,10 +39,10 @@
     }
     #loader .pct { margin-top: 8px; font-size: 12px; color: #9aa0a6; }
 
-    /* 축하 배너 */
+    /* 축하 배너(하단 크레딧 바로 위) */
     #celebrate {
       position: fixed;
-      top: 3%;
+      bottom: 44px;
       left: 50%;
       transform: translateX(-50%);
       text-align: center;
@@ -52,49 +52,26 @@
       z-index: 5;
       animation: rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
     }
-    #celebrate .flag { font-size: 28px; line-height: 1; }
-    #celebrate .title {
-      margin-top: 5px;
-      font-size: clamp(15px, 2.4vw, 28px);
+    #celebrate .event {
+      font-size: clamp(10px, 1.4vw, 15px);
+      letter-spacing: 0.22em;
+      color: #cdd3da;
+    }
+    #celebrate .event b { color: #ff6a3d; font-weight: 700; }
+    #celebrate .congrats {
+      margin-top: 6px;
+      font-size: clamp(18px, 3.0vw, 36px);
       font-weight: 800;
-      letter-spacing: 0.16em;
+      letter-spacing: 0.04em;
       background: linear-gradient(180deg, #ffe7a3 0%, #ffb340 45%, #ff6a3d 100%);
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
-      text-shadow: 0 2px 20px rgba(255, 140, 60, 0.35);
+      text-shadow: 0 2px 18px rgba(255, 140, 60, 0.3);
     }
-    #celebrate .car {
-      margin-top: 4px;
-      font-size: clamp(22px, 4.0vw, 48px);
-      font-weight: 900;
-      letter-spacing: 0.06em;
-      color: #f5f7fa;
-      text-shadow: 0 3px 26px rgba(0, 0, 0, 0.55);
-    }
-    #celebrate .sub {
-      margin-top: 10px;
-      font-size: clamp(11px, 1.5vw, 16px);
-      letter-spacing: 0.34em;
-      color: #cdd3da;
-      text-transform: uppercase;
-    }
-    #celebrate .sub b { color: #ff6a3d; }
-    #celebrate .rule {
-      width: 60%;
-      max-width: 420px;
-      height: 1px;
-      margin: 12px auto 0;
-      background: linear-gradient(90deg, transparent, #ff8a4d, transparent);
-    }
-    #celebrate .glow { animation: pulse 2.4s ease-in-out infinite; }
     @keyframes rise {
-      from { opacity: 0; transform: translate(-50%, -16px); }
+      from { opacity: 0; transform: translate(-50%, 16px); }
       to   { opacity: 1; transform: translate(-50%, 0); }
-    }
-    @keyframes pulse {
-      0%, 100% { filter: drop-shadow(0 0 0 rgba(255, 140, 60, 0)); }
-      50%      { filter: drop-shadow(0 0 14px rgba(255, 140, 60, 0.55)); }
     }
 
     /* 하단 크레딧 */
@@ -119,9 +96,10 @@
     #minimap {
       position: fixed;
       top: 16px;
-      right: 16px;
-      width: 200px;
-      height: 200px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 320px;
+      height: 128px;
       border-radius: 10px;
       border: 1px solid rgba(255, 255, 255, 0.18);
       box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
@@ -147,11 +125,8 @@
   <canvas id="app"></canvas>
 
   <div id="celebrate">
-    <div class="flag glow">🏁</div>
-    <div class="title">CONGRATULATIONS!</div>
-    <div class="car">GENESIS MAGMA</div>
-    <div class="rule"></div>
-    <div class="sub">24 Heures du Mans · 24h <b>FINISHER</b></div>
+    <div class="event">24 Heures du Mans - <b>Finisher</b></div>
+    <div class="congrats">Congrats! Genesis Magma</div>
   </div>
 
   <div id="credit"><b>동명대학교 게임그래픽학과</b> · Y.M. Kang</div>
