@@ -1055,8 +1055,19 @@ gltfLoader.load(
     showcaseGroup.add(showcaseSpinner);
     const showClone = model.clone();
     showClone.traverse((o) => {
-      if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; }
-      o.layers.set(SHOWCASE_LAYER); // 전용 레이어 → 정지/게임오버 때만 별도(밝게) 렌더
+      o.layers.set(SHOWCASE_LAYER); // 전용 레이어(정지/게임오버 때만 렌더)
+      if (o.isMesh) {
+        o.castShadow = false;
+        o.receiveShadow = false;
+        // 머티리얼 복제(원본 차량과 공유 방지) + 톤매핑 제외 →
+        // 어두운 노출(PAUSE_DARK_EXPOSURE)의 영향을 안 받아 모델만 밝게 보인다.
+        if (Array.isArray(o.material)) {
+          o.material = o.material.map((m) => { const c = m.clone(); c.toneMapped = false; return c; });
+        } else {
+          o.material = o.material.clone();
+          o.material.toneMapped = false;
+        }
+      }
     });
     showcaseSpinner.add(showClone);
     camera.add(showcaseGroup);
