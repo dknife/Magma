@@ -153,8 +153,7 @@ const COCKPIT_FWD_RATIO = 0.10; // 차 중심 기준 조종석의 전방 위치(
 // 픽셀 크기·여백은 index.html 의 #minimap 프레임과 일치시킨다.
 const MINIMAP_SIZE = 200;       // 미니맵 한 변(px)
 const MINIMAP_MARGIN = 16;      // 화면 가장자리 여백(px)
-let miniCam = null;             // 모델 로드 후 생성(차 크기에 맞춰 프러스텀 설정)
-let miniHeight = 0;             // 미니맵 카메라 높이(월드 단위)
+let miniCam = null;             // 조종석 전방 시점 카메라(모델 로드 후 생성)
 const camFollow = {
   prev: new THREE.Vector3(),
   ready: false,
@@ -165,6 +164,8 @@ const camFollow = {
   nearDist: 0,                   // 근접샷 거리 — 모델 로드 후 설정
   farDist: 0,                    // 원거리샷 거리
   cockpitFwd: 0,                 // 차 중심→조종석 전방 거리(월드 단위) — 모델 로드 후 설정
+  eyeHeight: 0,                  // 조종석 눈높이(미니맵 카메라) — 모델 로드 후 설정
+  camFwd: 0,                     // 미니맵 카메라 전방 오프셋(차 앞으로 빼 전방 시야 확보)
 };
 
 // 매 프레임 재사용하는 임시 벡터
@@ -496,13 +497,13 @@ gltfLoader.load(
     );
     controls.update();
 
-    // 미니맵 카메라: 차 위 높은 곳에서 수직으로 내려다보는 직교(ortho) 카메라.
-    // 한 변이 차 길이의 약 60배인 정사각 영역을 보여 주변 도로·교통을 담는다.
-    const miniExtent = maxDim * 30;          // 화면 절반에 담기는 월드 거리(반경)
-    miniHeight = maxDim * 80;                 // 차 위 카메라 높이
-    miniCam = new THREE.OrthographicCamera(
-      -miniExtent, miniExtent, miniExtent, -miniExtent, 1, miniHeight * 1.5
-    );
+    // 미니맵 카메라: 조종석에서 앞을 바라보는 원근(perspective) 카메라.
+    // 정사각 미니맵이므로 aspect=1. 위치·방향은 매 프레임 차에 맞춰 갱신한다.
+    miniCam = new THREE.PerspectiveCamera(90, 1, maxDim * 0.05, 2000); // 넓은 시야각
+    camFollow.eyeHeight = size.y * 0.95;      // 조종석 눈높이(조금 더 높게)
+    // 차체에 시야가 막히지 않도록 카메라를 차 앞코(앞 절반 끝 ≈ 0.5·size.x)
+    // 너머로 빼 전방 상황이 보이게 한다.
+    camFollow.camFwd = size.x * 0.6;
 
     console.log(
       `[GenesisMagma] 로드 완료 — 크기(W×H×L): ` +
@@ -660,15 +661,24 @@ function animate() {
 
   renderer.render(scene, camera);
 
-  // --- 미니맵: 차 위에서 내려다보는 두 번째 패스(우측 상단) ---
-  // 직교 카메라를 차 바로 위에 두고 수직으로 내려다보되, 카메라의 up 벡터를
-  // 차의 진행 방향으로 맞춰 '화면 위 = 진행 방향'이 되게 한다(GPS식 헤딩-업).
+  // --- 미니맵: 조종석에서 앞을 바라보는 두 번째 패스(우측 상단) ---
+  // 원근 카메라를 조종석 위치(차 중심에서 진행 방향 앞·눈높이)에 두고 진행
+  // 방향으로 약간(8도) 내려다보게 해 노면이 보이는 1인칭 전방 시점을 그린다.
   if (miniCam && camFollow.ready) {
     const fx = Math.cos(drive.heading);
     const fz = -Math.sin(drive.heading);
-    miniCam.position.set(car.position.x, miniHeight, car.position.z);
-    miniCam.up.set(fx, 0, fz);                 // 진행 방향이 화면 위쪽
-    miniCam.lookAt(car.position.x, 0, car.position.z);
+    miniCam.position.set(
+      car.position.x + fx * camFollow.camFwd,
+      camFollow.eyeHeight,
+      car.position.z + fz * camFollow.camFwd
+    );
+    miniCam.up.set(0, 1, 0);
+    const cp = Math.cos(0.14), sp = Math.sin(0.14); // 약 8도 하향
+    miniCam.lookAt(
+      miniCam.position.x + fx * cp,
+      miniCam.position.y - sp,
+      miniCam.position.z + fz * cp
+    );
 
     const w = window.innerWidth, h = window.innerHeight;
     const mx = w - MINIMAP_SIZE - MINIMAP_MARGIN;

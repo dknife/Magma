@@ -9,36 +9,6 @@
     html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1d23; }
     #app { width: 100vw; height: 100vh; display: block; }
 
-    #hud {
-      position: fixed;
-      top: 12px;
-      left: 12px;
-      font-family: "Segoe UI", system-ui, sans-serif;
-      color: #e6e8eb;
-      font-size: 13px;
-      line-height: 1.6;
-      background: rgba(20, 23, 28, 0.72);
-      padding: 10px 14px;
-      border-radius: 8px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      pointer-events: none;
-      user-select: none;
-    }
-    #hud b { color: #ff6a3d; }
-    #hud .key {
-      display: inline-block;
-      min-width: 16px;
-      text-align: center;
-      padding: 1px 5px;
-      margin: 0 1px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 4px;
-      font-size: 11px;
-    }
-    #hud .axis-x { color: #ff5555; }
-    #hud .axis-y { color: #55ff55; }
-    #hud .axis-z { color: #5599ff; }
-
     #loader {
       position: fixed;
       inset: 0;
@@ -160,18 +130,6 @@
       z-index: 5;
       overflow: hidden;
     }
-    /* 화면 상단 = 진행 방향 표시(▲) */
-    #minimap .heading {
-      position: absolute;
-      top: 6px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-family: "Segoe UI", system-ui, sans-serif;
-      font-size: 12px;
-      line-height: 1;
-      color: #ff6a3d;
-      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
-    }
     #minimap .label {
       position: absolute;
       bottom: 5px;
@@ -199,12 +157,7 @@
   <div id="credit"><b>동명대학교 게임그래픽학과</b> · Y.M. Kang</div>
 
   <div id="minimap">
-    <div class="heading">▲ 진행방향</div>
-    <div class="label">MINI-MAP</div>
-  </div>
-
-  <div id="hud">
-    <div><b>Genesis Magma</b> — 주행 시뮬레이션</div>
+    <div class="label">조종석 시점 · COCKPIT</div>
   </div>
 
   <div id="loader">
