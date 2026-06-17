@@ -155,6 +155,24 @@ window.addEventListener('keyup', (e) => {
   else if (e.key === 'ArrowRight') keyInput.right = false;
 });
 
+// 모바일 가상 버튼(좌/우): 누르고 있는 동안 해당 화살표 키와 동일하게 동작.
+function bindHoldButton(id, side) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const press = (e) => {
+    e.preventDefault();
+    el.setPointerCapture?.(e.pointerId); // 손가락이 버튼 밖으로 나가도 up 을 받도록
+    keyInput[side] = true;
+  };
+  const release = (e) => { e.preventDefault(); keyInput[side] = false; };
+  el.addEventListener('pointerdown', press);
+  el.addEventListener('pointerup', release);
+  el.addEventListener('pointercancel', release);
+  el.addEventListener('contextmenu', (e) => e.preventDefault()); // 길게 눌러도 메뉴 X
+}
+bindHoldButton('btn-left', 'left');
+bindHoldButton('btn-right', 'right');
+
 // 브레이크등(감속 시 후면 적색 발광)
 let brakeMaterial = null;   // 발광 머티리얼(emissiveIntensity 를 조절)
 let brakeLight = null;      // 후면 적색 포인트라이트
@@ -190,6 +208,7 @@ let avoidClearance = 0;         // 회피 시 확보할 횡방향 간격
 // 카메라 추적 + 높이 진동 + 근접/원거리 반복
 const CAM_BOB_OMEGA = 1.1;      // 상하 진동 각속도(rad/s)
 const CAM_DOLLY_OMEGA = 0.45;   // 근접↔원거리 왕복 각속도(rad/s) — 더 느린 주기
+const CAM_REAR_HALF_ANGLE = Math.PI / 4; // 카메라 허용 범위: 차 뒤쪽 ±45°(총 90°)
 const COCKPIT_FWD_RATIO = 0.10; // 차 중심 기준 조종석의 전방 위치(차 길이 비율)
 
 // 미니맵(화면 중앙 상단): 조종석 전방 시점. 가로:세로 = 2.5:1.
@@ -696,7 +715,7 @@ gltfLoader.load(
     drive.active = true;
 
     // 충돌 판정/곡선 도달 거리(차 크기 비례)
-    collisionDist = maxDim * 0.95; // 차 길이 ≈ maxDim → 접촉 시점에 발동
+    collisionDist = maxDim * 0.7; // 충돌 영역을 조금 작게(접촉보다 더 가까울 때만)
     recoverArrive = maxDim * 0.3;
     // 교통 차량 회피: 이 거리 안에서 횡방향 간격을 확보하며 비켜간다
     avoidRadius = maxDim * 4.0;
@@ -720,8 +739,8 @@ gltfLoader.load(
     brakeLight.userData.peak = maxDim * 12; // 최대 글로우 세기
     car.add(brakeLight);
 
-    // 카메라 상하 진동 진폭(차 크기에 비례)
-    camFollow.bobAmp = maxDim * 1.3;
+    // 카메라 상하 진동 진폭(차 크기에 비례) — 높이 60% 수준에 맞춰 축소
+    camFollow.bobAmp = maxDim * 0.78;
     // 근접샷 / 원거리샷 거리(차 크기에 비례)
     camFollow.nearDist = maxDim * 2.2;
     camFollow.farDist = maxDim * 5.5;        // 최원거리를 기존(11)의 1/2로
@@ -747,7 +766,7 @@ gltfLoader.load(
     controls.target.set(car.position.x, size.y * 0.5, car.position.z);
     camera.position.set(
       car.position.x + maxDim * 2.5,
-      maxDim * 2.0,
+      maxDim * 1.2,            // 높이 60% 수준(기존 2.0 → 1.2)
       car.position.z + maxDim * 3.0
     );
     controls.update();
@@ -981,6 +1000,27 @@ function animate() {
     if (ahead > 0) {
       camera.position.x -= fx * ahead;
       camera.position.z -= fz * ahead;
+    }
+  }
+
+  // 카메라를 차량 '뒤쪽' ±45°(총 90°) 범위로 제한한다(멀어졌다/가까워지는 줌은 유지).
+  // 뒤쪽 방향 = 진행(heading) 반대. 차가 회전하면 그 범위도 함께 돌아 항상 뒤를 본다.
+  // (스핀 중에는 heading 이 빠르게 돌아 카메라가 휙휙 돌므로 정상 주행일 때만.)
+  if (drive.active && drive.state === 'drive') {
+    const dx = camera.position.x - controls.target.x;
+    const dz = camera.position.z - controls.target.z;
+    const horiz = Math.hypot(dx, dz);
+    if (horiz > 1e-4) {
+      const camAng = Math.atan2(dz, dx);
+      const behindAng = Math.atan2(Math.sin(drive.heading), -Math.cos(drive.heading));
+      let rel = camAng - behindAng;
+      rel = Math.atan2(Math.sin(rel), Math.cos(rel)); // [-π, π]
+      const clamped = Math.max(-CAM_REAR_HALF_ANGLE, Math.min(CAM_REAR_HALF_ANGLE, rel));
+      if (clamped !== rel) {
+        const newAng = behindAng + clamped;
+        camera.position.x = controls.target.x + Math.cos(newAng) * horiz;
+        camera.position.z = controls.target.z + Math.sin(newAng) * horiz;
+      }
     }
   }
 

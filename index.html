@@ -108,6 +108,32 @@
       z-index: 5;
       overflow: hidden;
     }
+    /* 모바일 가상 조작 버튼(좌/우) */
+    .touch-btn {
+      position: fixed;
+      bottom: 24px;
+      width: 76px;
+      height: 76px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      background: rgba(20, 23, 28, 0.5);
+      color: #ff6a3d;
+      font-size: 30px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;       /* 터치 시 스크롤·확대 방지 */
+      z-index: 6;
+      cursor: pointer;
+    }
+    #btn-left { left: 24px; }
+    #btn-right { right: 24px; }
+    .touch-btn:active { background: rgba(255, 106, 61, 0.35); }
+
     #minimap .label {
       position: absolute;
       bottom: 5px;
@@ -134,6 +160,9 @@
   <div id="minimap">
     <div class="label">조종석 시점 · COCKPIT</div>
   </div>
+
+  <button id="btn-left" class="touch-btn" aria-label="왼쪽 이동">◀</button>
+  <button id="btn-right" class="touch-btn" aria-label="오른쪽 이동">▶</button>
 
   <div id="loader">
     <div>GenesisMagma.glb 불러오는 중…</div>
