@@ -134,6 +134,33 @@
     #btn-right { right: 24px; }
     .touch-btn:active { background: rgba(255, 106, 61, 0.35); }
 
+    /* 속도계(화면 왼쪽) */
+    #speedo {
+      position: fixed;
+      left: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 190px;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      pointer-events: none;
+      user-select: none;
+      z-index: 5;
+    }
+    #speedo svg { width: 100%; height: auto; display: block; }
+    #speedo .gauge-bg { fill: none; stroke: rgba(255, 255, 255, 0.18); stroke-width: 9; stroke-linecap: round; }
+    #speedo .gauge-red { fill: none; stroke: #ff3b30; stroke-width: 9; stroke-linecap: round; }
+    #speedo .tick { stroke: rgba(255, 255, 255, 0.55); stroke-width: 2; }
+    #speedo .needle { stroke: #ff6a3d; stroke-width: 3.5; stroke-linecap: round; }
+    #speedo .hub { fill: #ff6a3d; }
+    #speedo-readout {
+      text-align: center;
+      margin-top: -10px;
+      color: #e6e8eb;
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
+    }
+    #speedo-readout #speed-val { font-size: 32px; font-weight: 800; color: #fff; }
+    #speedo-readout .unit { font-size: 13px; margin-left: 5px; color: #9aa0a6; letter-spacing: 0.08em; }
+
     #minimap .label {
       position: absolute;
       bottom: 5px;
@@ -152,17 +179,28 @@
 
   <div id="celebrate">
     <div class="event">24 Heures du Mans - <b>Finisher</b></div>
-    <div class="congrats">Congrats! Genesis Magma</div>
+    <div class="congrats">Genesis Magma</div>
   </div>
 
   <div id="credit"><b>동명대학교 게임그래픽학과</b> · Y.M. Kang</div>
 
   <div id="minimap">
-    <div class="label">조종석 시점 · COCKPIT</div>
+    <div class="label">COCKPIT</div>
   </div>
 
   <button id="btn-left" class="touch-btn" aria-label="왼쪽 이동">◀</button>
   <button id="btn-right" class="touch-btn" aria-label="오른쪽 이동">▶</button>
+
+  <div id="speedo">
+    <svg viewBox="0 0 200 128">
+      <path class="gauge-bg" d="M20 110 A80 80 0 0 1 180 110" />
+      <path class="gauge-red" d="M171.28 73.68 A80 80 0 0 1 180 110" />
+      <g id="speedo-ticks"></g>
+      <g id="speedo-needle"><line class="needle" x1="100" y1="110" x2="100" y2="36" /></g>
+      <circle class="hub" cx="100" cy="110" r="6" />
+    </svg>
+    <div id="speedo-readout"><span id="speed-val">0</span><span class="unit">km/h</span></div>
+  </div>
 
   <div id="loader">
     <div>GenesisMagma.glb 불러오는 중…</div>
