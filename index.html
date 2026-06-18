@@ -258,6 +258,31 @@
     }
     #restart-btn:active { transform: translateY(1px); }
 
+    /* 시작/재개 3-2-1 카운트다운 */
+    #countdown {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      z-index: 22;
+      font-family: "Segoe UI", system-ui, sans-serif;
+    }
+    #countdown.hidden { display: none; }
+    #countdown span {
+      font-size: clamp(90px, 24vw, 260px);
+      font-weight: 900;
+      color: #fff;
+      text-shadow: 0 4px 30px rgba(0, 0, 0, 0.6), 0 0 46px rgba(255, 120, 60, 0.55);
+      animation: cd-pop 1s ease-out both;
+    }
+    @keyframes cd-pop {
+      0%   { transform: scale(1.9); opacity: 0; }
+      20%  { opacity: 1; }
+      100% { transform: scale(0.65); opacity: 0.12; }
+    }
+
     #minimap .label {
       position: absolute;
       bottom: 5px;
@@ -537,6 +562,8 @@
     </div>
     <button id="restart-btn">RESTART</button>
   </div>
+
+  <div id="countdown" class="hidden"><span id="countdown-num">3</span></div>
 
   <div id="loader">
     <div>GenesisMagma.glb 불러오는 중…</div>
