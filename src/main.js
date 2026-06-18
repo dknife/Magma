@@ -484,6 +484,26 @@ const brake = { glow: 0 };  // 0~1 발광 정도(부드럽게 보간)
 let boostFlames = [];       // 좌/우 화염 메시
 let boostLight = null;      // 후방 청록색 포인트라이트
 
+// 전방 헤드라이트 섬광(앞차를 일정 거리로 따라잡으면 5회 번쩍)
+let headlightMat = null;    // 헤드라이트 발광 머티리얼
+let headlightLight = null;  // 전방 포인트라이트
+let headlightFlashDist = 0; // 섬광 트리거 거리(월드) — 모델 로드 후 설정
+const headlightFlash = { active: false, t: 0 };
+const HEADLIGHT_FLASH_PERIOD = 0.1; // 켜짐/꺼짐 한 구간(s)
+const HEADLIGHT_FLASH_COUNT = 5;    // 번쩍임 횟수
+function setHeadlight(on) {
+  if (headlightMat) headlightMat.emissiveIntensity = on ? 5 : 0;
+  if (headlightLight) headlightLight.intensity = on ? headlightLight.userData.peak : 0;
+}
+function startHeadlightFlash() { headlightFlash.active = true; headlightFlash.t = 0; }
+function updateHeadlightFlash(dt) {
+  if (!headlightFlash.active) return;
+  headlightFlash.t += dt;
+  const idx = Math.floor(headlightFlash.t / HEADLIGHT_FLASH_PERIOD);
+  if (idx >= HEADLIGHT_FLASH_COUNT * 2) { headlightFlash.active = false; setHeadlight(false); return; }
+  setHeadlight(idx % 2 === 0); // 짝수 구간 켜짐 → 총 5회 번쩍
+}
+
 // 코너 속도(slow-in / fast-out) 튜닝
 const CORNER_EPS = 0.006;       // 곡률 측정용 접선 간격(u 단위)
 const TURN_MAX = 0.22;          // 이 이상 꺾이면 최저 속도(rad)
@@ -1366,6 +1386,26 @@ gltfLoader.load(
     boostLight.userData.peak = maxDim * 16; // 최대 발광 세기
     car.add(boostLight);
 
+    // 전방 헤드라이트(차 로컬 +X = 앞). 좌/우 2개 + 전방 포인트라이트.
+    // 앞차를 일정 거리로 따라잡으면 5회 번쩍이는 섬광 신호(평소엔 꺼짐).
+    headlightMat = new THREE.MeshStandardMaterial({
+      color: 0x1a1a1a, emissive: 0xfff2cc, emissiveIntensity: 0,
+      roughness: 0.25, metalness: 0.0, toneMapped: false, // 섬광이 강하게 보이도록 톤매핑 제외
+    });
+    const hlGeo = new THREE.BoxGeometry(size.x * 0.04, size.y * 0.10, size.z * 0.18);
+    const frontX = size.x * 0.47;       // 차체 앞쪽
+    const hlY = size.y * 0.40;          // 헤드라이트 높이
+    for (const sz of [-1, 1]) {
+      const hl = new THREE.Mesh(hlGeo, headlightMat);
+      hl.position.set(frontX, hlY, sz * size.z * 0.32);
+      car.add(hl);
+    }
+    headlightLight = new THREE.PointLight(0xfff2cc, 0, size.x * 6, 2);
+    headlightLight.position.set(frontX + size.x * 0.1, hlY, 0);
+    headlightLight.userData.peak = maxDim * 14; // 섬광 시 최대 세기
+    car.add(headlightLight);
+    headlightFlashDist = maxDim * 10; // 이 거리 안으로 앞차를 따라잡으면 섬광
+
     // 카메라 상하 진동 진폭(차 크기에 비례) — 높이 60% 수준에 맞춰 축소
     camFollow.bobAmp = maxDim * 0.78;
     // 추격 거리: 차 길이(size.x) 기준 고정. 모바일은 조금 더 멀리(4배)서 관찰.
@@ -1656,6 +1696,7 @@ function togglePause() {
   if (game.countdown > 0) return; // 카운트다운 진행 중엔 토글 무시
   game.paused = !game.paused;
   if (pauseBtn) pauseBtn.textContent = game.paused ? '▶' : '⏸';
+  headlightFlash.active = false; setHeadlight(false); // 진행 중이던 섬광 즉시 종료(정지 중 잔광 방지)
   if (game.paused) {
     const ctx = getAudioCtx();
     if (ctx) ctx.suspend(); // 즉시 무음(엔진/효과음·배경음악은 syncAudio 가 함께 정지)
@@ -1670,6 +1711,7 @@ function togglePause() {
 function gameOver() {
   game.over = true;
   drive.active = false; // 시뮬레이션 정지
+  headlightFlash.active = false; setHeadlight(false); // 섬광 종료
   const ctx = getAudioCtx();
   if (ctx) ctx.suspend(); // 사운드 끄기
   if (gameoverScoreEl) gameoverScoreEl.textContent = game.score;
@@ -1790,6 +1832,9 @@ function animate() {
     if (brakeMaterial) brakeMaterial.emissiveIntensity = brake.glow * 3.5;
     if (brakeLight) brakeLight.intensity = brake.glow * brakeLight.userData.peak;
 
+    // --- 전방 헤드라이트 섬광(앞차 따라잡을 때 5회 번쩍) ---
+    updateHeadlightFlash(dt);
+
     // --- 부스터 화염: boost(1→1.2) 비율에 비례해 길이·세기, 약간의 깜빡임 ---
     const boostInt = Math.max(0, (drive.boost - 1) / (BOOST_FACTOR - 1)); // 0~1
     if (boostLight) boostLight.intensity = boostInt * boostLight.userData.peak;
@@ -1906,14 +1951,24 @@ function animate() {
             popText('+50', window.innerWidth / 2, window.innerHeight * 0.42, '#7CFC6A', 30);
           }
           t.relPrev = d;
+          // 앞차(d<0=상대가 앞)를 일정 거리 이내로 따라잡으면 헤드라이트 섬광 1세트(5회).
+          // 차당 1회만 — 다시 멀어지거나 추월하면 리셋되어 다음 접근 때 또 신호한다.
+          const gapAhead = -d * drive.length; // 양수면 상대가 앞쪽(월드 거리)
+          if (gapAhead > 0 && gapAhead < headlightFlashDist) {
+            if (!t.signaled) { t.signaled = true; startHeadlightFlash(); }
+          } else if (gapAhead <= 0 || gapAhead > headlightFlashDist * 1.4) {
+            t.signaled = false;
+          }
         } else {
           t.relPrev = undefined; // 주인공 스핀/복귀 중엔 판정 보류
         }
       } else if (t.state === 'spin') {
         t.relPrev = undefined; // 충돌 후엔 상대위치 기준을 리셋(복귀 시 오탐 방지)
+        t.signaled = false;
         if (stepSpin(t, t.rig, dt)) enterRecover(t, t.rig);
       } else { // 'recover'
         t.relPrev = undefined;
+        t.signaled = false;
         if (stepRecover(t, t.rig, dt)) resumeTraffic(t);
       }
       if (t.cooldown > 0) t.cooldown -= dt;
