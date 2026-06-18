@@ -291,6 +291,33 @@
       white-space: nowrap;
     }
 
+    /* 모바일: Score/Best/다이아몬드를 조종석 작은 창 안(안내문 아래)에 표시 */
+    body.mobile #minimap #score,
+    body.mobile #minimap #diamonds {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      z-index: 6;
+      /* 밝은/어두운 배경 모두에서 보이도록 검은 테두리 + 글로우 */
+      text-shadow:
+        -1px -1px 0 #000,  1px -1px 0 #000,
+        -1px  1px 0 #000,  1px  1px 0 #000,
+         0    0   3px rgba(0, 0, 0, 0.9);
+    }
+    body.mobile #minimap #score {
+      top: 22px;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+    }
+    body.mobile #minimap #score b { font-size: 16px; margin-left: 4px; }
+    body.mobile #minimap #score .best { margin-left: 12px; }
+    body.mobile #minimap #diamonds {
+      top: 44px;
+      font-size: 15px;
+      letter-spacing: 2px;
+    }
+
     /* 첫 화면(타이틀)에서는 게임 HUD 를 숨긴다(중앙의 회전 차량만 보이게) */
     body.titlescreen #score,
     body.titlescreen #diamonds,

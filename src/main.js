@@ -1263,6 +1263,14 @@ if (minimapEl) {
     if (e.timeStamp - _miniLastTap < 300) { toggleCockpitMain(); _miniLastTap = -1e9; }
     else _miniLastTap = e.timeStamp;
   });
+
+  // 모바일: Score/Best/다이아몬드를 조종석 작은 창 안(안내문 아래)으로 옮겨 표시
+  if (IS_MOBILE) {
+    document.body.classList.add('mobile');
+    const scoreEl = document.getElementById('score');
+    if (scoreEl) minimapEl.appendChild(scoreEl);
+    if (diamondsEl) minimapEl.appendChild(diamondsEl);
+  }
 }
 
 // 최고 기록(localStorage 에 저장 — Restart=리로드 후에도 유지)
