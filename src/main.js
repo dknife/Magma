@@ -229,10 +229,19 @@ function resumeAudio() {
 window.addEventListener('pointerdown', resumeAudio);
 window.addEventListener('keydown', resumeAudio);
 
+// 배경 음악(song.mp3) — 게임 플레이 중에만 재생
+const bgmEl = document.getElementById('bgm');
+if (bgmEl) bgmEl.volume = 0.4; // 엔진음을 가리지 않도록 적당히
+
 // 사운드 상태 강제 일치(매 프레임 호출): 게임 진행 중에만 ON, 그 외(시작 전·정지·게임오버)엔 OFF.
 function syncAudio() {
-  if (!audioCtx) return; // 아직 컨텍스트 생성 전이면 소리 없음(=OFF)
   const shouldOn = game.started && !game.paused && !game.over;
+  // 배경 음악: 진행 중이면 재생, 그 외엔 일시정지(엔진/효과음과 동일한 조건)
+  if (bgmEl) {
+    if (shouldOn) { if (bgmEl.paused) bgmEl.play().catch(() => {}); }
+    else if (!bgmEl.paused) bgmEl.pause();
+  }
+  if (!audioCtx) return; // 아직 컨텍스트 생성 전이면(엔진/효과음) 소리 없음(=OFF)
   if (shouldOn) {
     if (audioCtx.state === 'suspended') audioCtx.resume();
     initEngine(); // 엔진 미초기화 시 생성(이미 있으면 무시) → 게임 중 반드시 엔진음 ON
@@ -1255,6 +1264,7 @@ function startGame() {
   drive.active = true;                            // 주행 시작
   game.grace = START_GRACE;                        // 시작 후 5초간 충돌 면제
   resumeAudio();                                  // 사용자 제스처 → 오디오/엔진음 시작
+  if (bgmEl) bgmEl.play().catch(() => {});         // 사용자 제스처 안에서 배경음악 재생 시작(자동재생 정책)
 }
 
 // 조종석 창(미니맵)을 더블클릭/더블탭 → 조종석 시점을 전체화면으로(작은 창엔 게임 화면).
