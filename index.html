@@ -103,7 +103,8 @@
       border-radius: 10px;
       border: 1px solid rgba(255, 255, 255, 0.18);
       box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
-      pointer-events: none;
+      pointer-events: auto;     /* 더블클릭으로 전체화면↔작은창 전환 */
+      cursor: pointer;
       user-select: none;
       z-index: 5;
       overflow: hidden;
@@ -268,10 +269,206 @@
       color: #cdd3da;
       text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
     }
+    /* 작은 창 상단 안내(더블탭으로 전체화면 전환) */
+    #minimap .hint {
+      position: absolute;
+      top: 5px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      color: #fff;
+      /* 밝은/어두운 배경 모두에서 보이도록 검은 테두리(8방향) + 약한 글로우 */
+      text-shadow:
+        -1px -1px 0 #000,  1px -1px 0 #000,
+        -1px  1px 0 #000,  1px  1px 0 #000,
+         0   -1px 0 #000,  0    1px 0 #000,
+        -1px  0   0 #000,  1px  0   0 #000,
+         0    0   3px rgba(0, 0, 0, 0.9);
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    /* 첫 화면(타이틀)에서는 게임 HUD 를 숨긴다(중앙의 회전 차량만 보이게) */
+    body.titlescreen #score,
+    body.titlescreen #diamonds,
+    body.titlescreen #speedo,
+    body.titlescreen #minimap,
+    body.titlescreen .touch-btn,
+    body.titlescreen #celebrate { display: none !important; }
+
+    /* 타이틀 오버레이: 위=제목, 아래=버튼. 가운데는 비워 회전 차량이 보이게 */
+    #title {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9vh 0 8vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      pointer-events: none; /* 가운데 차량/캔버스로 입력 통과, 버튼만 auto */
+      user-select: none;
+      z-index: 15;
+    }
+    #title.hidden { display: none; }
+    #title .t-name {
+      text-align: center;
+      font-size: clamp(40px, 8vw, 96px);
+      font-weight: 900;
+      letter-spacing: 0.03em;
+      line-height: 1.05;
+      background: linear-gradient(180deg, #ffe7a3 0%, #ffb340 45%, #ff6a3d 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      text-shadow: 0 4px 30px rgba(255, 140, 60, 0.35);
+    }
+    #title .t-sub {
+      margin-top: 12px;
+      text-align: center;
+      font-size: clamp(13px, 2vw, 20px);
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: #cdd3da;
+      text-shadow: 0 1px 10px rgba(0, 0, 0, 0.7);
+    }
+    #title .t-actions {
+      display: flex;
+      gap: 18px;
+      pointer-events: auto;
+    }
+    #title button {
+      padding: 14px 38px;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      border-radius: 12px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.08s ease;
+    }
+    #title button:active { transform: translateY(1px); }
+    #start-btn {
+      color: #fff;
+      background: #ff6a3d;
+      border: none;
+      box-shadow: 0 6px 22px rgba(255, 106, 61, 0.4);
+    }
+    #howto-btn {
+      color: #ffd9c7;
+      background: rgba(20, 23, 28, 0.5);
+      border: 1px solid rgba(255, 106, 61, 0.7);
+    }
+
+    /* HOW TO 안내 카드 */
+    #howto {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(10, 12, 16, 0.74);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      user-select: none;
+      z-index: 16;
+    }
+    #howto.hidden { display: none; }
+    #howto .howto-card {
+      width: 86%;
+      max-width: 470px;
+      padding: 28px 30px 26px;
+      background: rgba(24, 27, 33, 0.97);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 16px;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+    }
+    #howto .howto-title {
+      margin-bottom: 18px;
+      text-align: center;
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      color: #ff6a3d;
+    }
+    #howto ul { list-style: none; }
+    #howto li {
+      position: relative;
+      padding: 7px 0 7px 24px;
+      font-size: 15px;
+      line-height: 1.5;
+      color: #e6e8eb;
+    }
+    #howto li::before {
+      content: '›';
+      position: absolute;
+      left: 4px;
+      color: #ff6a3d;
+      font-weight: 800;
+    }
+    #howto-back {
+      margin-top: 22px;
+      width: 100%;
+      padding: 13px 0;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      color: #fff;
+      background: #ff6a3d;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    #howto-back:active { transform: translateY(1px); }
+
+    /* 점수 변동 팝업(JS 가 SCORE 표시 위치로 날려 보내며 사라짐) */
+    .float-pop {
+      position: fixed;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      pointer-events: none;
+      user-select: none;
+      white-space: nowrap;
+      z-index: 30;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+      will-change: transform, opacity;
+    }
   </style>
 </head>
-<body>
+<body class="titlescreen">
   <canvas id="app"></canvas>
+
+  <!-- 첫 화면(타이틀): 게임은 아직 멈춰 있고 중앙에서 차량만 회전 -->
+  <div id="title" class="hidden">
+    <div class="t-head">
+      <div class="t-name">Ready 4 DASH</div>
+      <div class="t-sub">Congratulations! Le Mans 24h Finisher!</div>
+    </div>
+    <div class="t-actions">
+      <button id="start-btn">START</button>
+      <button id="howto-btn">HOW TO</button>
+    </div>
+  </div>
+
+  <!-- 사용법 안내(HOW TO) -->
+  <div id="howto" class="hidden">
+    <div class="howto-card">
+      <div class="howto-title">HOW TO PLAY</div>
+      <ul>
+        <li>제네시스 마그마는 자동으로 질주합니다.</li>
+        <li>좌우 화살표/버튼을 눌러 조정하세요.</li>
+        <li>앞서 가는 차량을 추월하면 50점 가산.</li>
+        <li>현재의 속도가 점수로 누적됩니다.</li>
+        <li>좌우 키를 누르고 있으면 감점입니다.</li>
+        <li>스페이스바/더블탭으로 부스터를 쓰세요.</li>
+        <li>부스터는 100점이 가산됩니다.</li>
+      </ul>
+      <button id="howto-back">돌아가기</button>
+    </div>
+  </div>
 
   <div id="celebrate">
     <div class="event">24 Heures du Mans - <b>Finisher</b></div>
@@ -281,6 +478,7 @@
   <div id="credit"><b>동명대학교 게임그래픽학과</b> · Y.M. Kang</div>
 
   <div id="minimap">
+    <div class="hint">Double Tap to Switch</div>
     <div class="label">COCKPIT</div>
     <button id="pause-btn" aria-label="일시정지">⏸</button>
   </div>
