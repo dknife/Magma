@@ -229,6 +229,18 @@ function resumeAudio() {
 window.addEventListener('pointerdown', resumeAudio);
 window.addEventListener('keydown', resumeAudio);
 
+// 사운드 상태 강제 일치(매 프레임 호출): 게임 진행 중에만 ON, 그 외(시작 전·정지·게임오버)엔 OFF.
+function syncAudio() {
+  if (!audioCtx) return; // 아직 컨텍스트 생성 전이면 소리 없음(=OFF)
+  const shouldOn = game.started && !game.paused && !game.over;
+  if (shouldOn) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    initEngine(); // 엔진 미초기화 시 생성(이미 있으면 무시) → 게임 중 반드시 엔진음 ON
+  } else if (audioCtx.state === 'running') {
+    audioCtx.suspend(); // 시작 전·정지·게임오버 → 반드시 OFF
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 엔진음(속도 비례) — 톱니파 2개(살짝 디튠) + 한 옥타브 아래 사인(바디)을
 // 저역통과 필터로 묶어 합성. 주파수·필터·음량을 매 프레임 속도에 맞춰 갱신.
@@ -1363,6 +1375,8 @@ const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
+
+  syncAudio(); // 게임 중에만 사운드 ON, 그 외엔 OFF 강제
 
   if (drive.active && !game.paused) {
     let decelNorm = 0; // 브레이크등 세기(스핀/복귀 중엔 0)
