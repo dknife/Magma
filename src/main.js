@@ -362,9 +362,9 @@ function resumeAudio() {
 window.addEventListener('pointerdown', resumeAudio);
 window.addEventListener('keydown', resumeAudio);
 
-// 배경 음악(song.mp3) — 게임 플레이 중에만 재생
+// 배경 음악(TUGameSong.mp3) — 게임 플레이 중에만 재생
 const bgmEl = document.getElementById('bgm');
-if (bgmEl) bgmEl.volume = 0.4; // 엔진음을 가리지 않도록 적당히
+if (bgmEl) bgmEl.volume = 0.22; // 엔진음·충돌음(효과음)을 가리지 않게 낮게
 
 // 사운드 상태 강제 일치(매 프레임 호출): 게임 진행 중에만 ON, 그 외(시작 전·정지·게임오버)엔 OFF.
 function syncAudio() {
@@ -1649,12 +1649,14 @@ function togglePause() {
   if (game.countdown > 0) return; // 카운트다운 진행 중엔 토글 무시
   game.paused = !game.paused;
   if (pauseBtn) pauseBtn.textContent = game.paused ? '▶' : '⏸';
-  const ctx = getAudioCtx();
   if (game.paused) {
-    if (ctx) ctx.suspend();
+    const ctx = getAudioCtx();
+    if (ctx) ctx.suspend(); // 즉시 무음(엔진/효과음·배경음악은 syncAudio 가 함께 정지)
   } else {
-    beginCountdown();            // 즉시 재개가 아니라 3-2-1 후 복귀(grace 는 0 도달 시 부여)
-    if (ctx) ctx.resume();
+    // 재개도 3-2-1 후 출발. 여기서 직접 resume 하지 않는다 — 카운트다운 동안엔
+    // 엔진/효과음이 꺼져 있어야 하고, 카운트다운이 끝나면 syncAudio 가 매 프레임
+    // 상태를 보고 자동으로 되살린다(직접 resume 시 카운트다운 중 suspend 와 레이스 발생).
+    beginCountdown();
   }
 }
 function gameOver() {
