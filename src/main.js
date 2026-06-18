@@ -20,6 +20,12 @@ const RACEWAY_YAW_OFFSET = 0;        // 메쉬 진행축이 트랙과 안 맞으
 const RACEWAY_YAW_JITTER = Math.PI;  // 개체별 무작위 회전 범위(±rad) — 똑같은 모습 방지
 const TOYOTA_URL = './meshes/Toyota.opt.glb';       // 트랙 전체를 도는 교통(traffic) 차량(압축본)
 const TOYOTA_COUNT = 20;                            // 트랙에 흩뿌릴 Toyota 대수
+const TREE_URL = './meshes/tree.opt.glb';           // 트랙 안팎 조경용 나무(압축본)
+const TREE_COUNT = 140;                             // 트랙 안팎에 흩뿌릴 나무 그루 수
+const TREE_SIZE_FACTOR = 1.4;                       // 나무 높이 기준 크기(roadHalfWidth 배수)
+const TREE_SCALE_JITTER = 0.3;                      // 나무 크기 개체별 무작위 변동(±비율)
+const TREE_CLEARANCE = 1.2;                         // 도로 가장자리에서 비워둘 거리(roadHalfWidth 배수)
+const TREE_FIELD_FACTOR = 1.25;                     // 나무를 흩뿌릴 영역 반경(trackRadius 배수, 안팎 포함)
 const TOYOTA_SPEED_RATIO = 0.9;                     // 주인공 대비 속도. 높일수록 상대속도↓ → 천천히 지나감
 const GROUND_SIZE = 1600;   // 그림자받이 바닥 평면 한 변 길이 (월드 단위)
 const MAX_DIAMONDS = 5;     // 시작 다이아몬드(생명) 수
@@ -823,6 +829,89 @@ function loadRaceway(roadHalfWidth) {
 }
 
 // ---------------------------------------------------------------------------
+// 나무(tree) — 트랙 안팎에 자연스럽게 흩뿌리기
+// ---------------------------------------------------------------------------
+// 압축본 tree.opt.glb 를 한 번 로드해 높이를 도로 폭 기준으로 정규화한 뒤, 같은
+// 메쉬를 TREE_COUNT 그루 복제(geometry/material 공유)한다. 코스 중심(원점)을 덮는
+// 원반에서 위치를 무작위 표본하되, 도로 중심선과 너무 가까운 후보는 기각해 주행로를
+// 침범하지 않게 한다. 이렇게 하면 트랙 안쪽(인필드)과 바깥쪽 모두에 자연스레 깔린다.
+function loadTrees(roadHalfWidth, trackRadius) {
+  gltfLoader.load(
+    TREE_URL,
+    (gltf) => {
+      const proto = gltf.scene;
+      proto.traverse((obj) => {
+        if (obj.isMesh) {
+          obj.castShadow = true;
+          obj.receiveShadow = true;
+        }
+      });
+
+      // 높이를 roadHalfWidth 기준으로 맞추고 바닥 안착(min.y=0)·XZ 중심 정렬.
+      let box = new THREE.Box3().setFromObject(proto);
+      let size = box.getSize(new THREE.Vector3());
+      proto.scale.setScalar((roadHalfWidth * TREE_SIZE_FACTOR) / (size.y || 1));
+      proto.updateMatrixWorld(true);
+      box = new THREE.Box3().setFromObject(proto);
+      const center = box.getCenter(new THREE.Vector3());
+      proto.position.x -= center.x;
+      proto.position.z -= center.z;
+      proto.position.y -= box.min.y;
+
+      // 도로 중심선 표본점(후보가 도로를 침범하는지 거리로 판정).
+      const curve = drive.curve;
+      const SAMPLES = 256;
+      const cx = new Float32Array(SAMPLES);
+      const cz = new Float32Array(SAMPLES);
+      const sp = new THREE.Vector3();
+      for (let i = 0; i < SAMPLES; i++) {
+        curve.getPointAt(i / SAMPLES, sp);
+        cx[i] = sp.x;
+        cz[i] = sp.z;
+      }
+      // 도로 중심선에서 이만큼 안쪽은 비워 둔다(도로 반폭 + 여유).
+      const keepOut2 = (roadHalfWidth * (1 + TREE_CLEARANCE)) ** 2;
+      const fieldR = trackRadius * TREE_FIELD_FACTOR;
+
+      let placed = 0;
+      let attempts = 0;
+      const maxAttempts = TREE_COUNT * 30;
+      while (placed < TREE_COUNT && attempts < maxAttempts) {
+        attempts++;
+        // 원반(반경 fieldR) 균등 표본 → 트랙 안(인필드)과 밖을 모두 덮는다.
+        const r = Math.sqrt(Math.random()) * fieldR;
+        const a = Math.random() * Math.PI * 2;
+        const x = Math.cos(a) * r;
+        const z = Math.sin(a) * r;
+        // 도로와의 최소 거리(제곱) 검사 — 너무 가까우면 기각.
+        let min2 = Infinity;
+        for (let i = 0; i < SAMPLES; i++) {
+          const dx = x - cx[i];
+          const dz = z - cz[i];
+          const d2 = dx * dx + dz * dz;
+          if (d2 < min2) min2 = d2;
+        }
+        if (min2 < keepOut2) continue;
+
+        const rig = new THREE.Group();
+        rig.add(proto.clone());
+        rig.position.set(x, 0, z);
+        rig.rotation.y = Math.random() * Math.PI * 2;                 // 방향 무작위
+        rig.scale.setScalar(1 + (Math.random() * 2 - 1) * TREE_SCALE_JITTER); // 크기 무작위(바닥 안착 유지)
+        scene.add(rig);
+        placed++;
+      }
+
+      console.log(
+        `[Tree] 배치 완료 — ${placed}그루(시도 ${attempts}, 영역 반경 ${fieldR.toFixed(1)})`
+      );
+    },
+    undefined,
+    (err) => console.error('[Tree] 로드 실패:', err)
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 조종석 시점 차량 강조 마커 (밝은 테두리 + 위쪽 역삼각형 ▼)
 // ---------------------------------------------------------------------------
 // 역삼각형(▼) 스프라이트 텍스처(한 번 만들어 모든 차량이 공유)
@@ -1077,6 +1166,9 @@ gltfLoader.load(
 
     // 레이스웨이 메쉬를 트랙 둘레 전체에 빙 둘러 배치
     loadRaceway(roadHalfWidth);
+
+    // 나무를 트랙 안팎에 자연스럽게 흩뿌림(주행로는 비워 둠)
+    loadTrees(roadHalfWidth, trackRadius);
 
     // 교통 차량(Toyota) N대를 트랙 전체에 흩뿌려 각자 주행시킴
     loadToyota(size, TOYOTA_COUNT);

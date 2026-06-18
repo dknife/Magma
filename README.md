@@ -62,6 +62,15 @@ npx @gltf-transform/cli optimize meshes/Toyota.glb meshes/Toyota.opt.glb \
 
 Toyota는 메인 차량과 비슷한 크기로 정규화한 뒤 한 번만 로드하고, 같은 메쉬를 `TOYOTA_COUNT`(기본 20)대 복제(geometry/material 공유)해 트랙 곡선 전체에 균등하게 흩뿌립니다. 각 대는 곡선을 따라 **독립적으로** 주행하며 속도는 주인공 레이싱 카의 `TOYOTA_SPEED_RATIO`(기본 80%)입니다. 주행선에서의 횡방향 오프셋은 차폭 `w` 기준 `[-3w, 3w]` 균등분포로 무작위 결정해 한 줄로 늘어서지 않게 했습니다.
 
+조경용 나무 `tree.glb`(16.9 MB)도 같은 방식으로 `tree.opt.glb`(약 0.84 MB)로 압축해 사용합니다.
+
+```bash
+npx @gltf-transform/cli optimize meshes/tree.glb meshes/tree.opt.glb \
+  --compress draco --texture-compress webp --texture-size 1024
+```
+
+나무는 높이를 도로 폭 기준(`TREE_SIZE_FACTOR`)으로 정규화한 뒤 같은 메쉬를 `TREE_COUNT`(기본 140)그루 복제(geometry/material 공유)합니다. 코스 중심을 덮는 원반(`TREE_FIELD_FACTOR`)에서 위치를 무작위 표본하되 **도로 중심선과 너무 가까운 후보는 기각**(`TREE_CLEARANCE`)해 주행로를 침범하지 않게 하므로, 트랙 **안쪽(인필드)과 바깥쪽** 모두에 자연스럽게 깔립니다. 방향(0~2π)과 크기(`TREE_SCALE_JITTER`)는 그루마다 무작위로 흔들어 단조로움을 줄였습니다.
+
 ## 구조
 
 ```
