@@ -355,8 +355,11 @@ function getAudioCtx() {
 function resumeAudio() {
   const ctx = getAudioCtx();
   if (!ctx) return;
-  if (!game.started) return; // 첫 화면(타이틀) 동안엔 엔진음을 켜지 않는다(START 가 깨움)
-  if (ctx.state === 'suspended' && !game.paused && !game.over && game.countdown <= 0) ctx.resume(); // 정지/게임오버/카운트다운 중엔 깨우지 않음
+  if (!game.started || game.paused || game.over) return; // 진행 중이 아니면 깨우지 않음
+  // iOS 자동재생 정책: resume() 은 사용자 제스처 안에서만 동작 → 카운트다운 중에도 컨텍스트는
+  // 켜 둔다(엔진음 자체는 syncAudio 가 게인으로 차단). 이래야 카운트다운 후 비제스처에서
+  // resume 을 다시 부르지 않아 iOS 에서도 엔진음이 확실히 살아난다.
+  if (ctx.state === 'suspended') ctx.resume();
   initEngine();
 }
 window.addEventListener('pointerdown', resumeAudio);
@@ -368,19 +371,23 @@ if (bgmEl) bgmEl.volume = 0.22; // 엔진음·충돌음(효과음)을 가리지 
 
 // 사운드 상태 강제 일치(매 프레임 호출): 게임 진행 중에만 ON, 그 외(시작 전·정지·게임오버)엔 OFF.
 function syncAudio() {
-  // 배경 음악은 시작~게임 동안 재생(카운트다운 중에도 유지), 엔진/효과음은 카운트다운이
-  // 끝난 실제 주행 중에만 ON.
+  // 배경 음악은 진행 중(카운트다운 포함) 재생. 엔진/효과음 컨텍스트는 진행 중엔 켜 두고,
+  // 엔진음 자체는 카운트다운이 끝난 실제 주행 중에만(게인으로 차단 — iOS resume 제스처 문제 회피).
   const playing = game.started && !game.paused && !game.over;
-  const shouldOn = playing && game.countdown <= 0;
+  const engineOn = playing && game.countdown <= 0;
   // 배경 음악: 진행 중이면 재생, 그 외엔 일시정지
   if (bgmEl) {
     if (playing) { if (bgmEl.paused) bgmEl.play().catch(() => {}); }
     else if (!bgmEl.paused) bgmEl.pause();
   }
   if (!audioCtx) return; // 아직 컨텍스트 생성 전이면(엔진/효과음) 소리 없음(=OFF)
-  if (shouldOn) {
+  if (playing) {
+    // 컨텍스트는 진행 중 항상 running 유지(카운트다운 동안에도). resume 은 비제스처라 iOS 에선
+    // 무시될 수 있으나, 제스처(START/일시정지 해제)에서 이미 깨워 두므로 그대로 유지된다.
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    initEngine(); // 엔진 미초기화 시 생성(이미 있으면 무시) → 게임 중 반드시 엔진음 ON
+    initEngine();
+    // 엔진음: 카운트다운 중엔 게인 0(무음), 끝나면 updateEngine 이 게인을 되살린다.
+    if (engine && !engineOn) engine.gain.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 0.03);
   } else if (audioCtx.state === 'running') {
     audioCtx.suspend(); // 시작 전·정지·게임오버 → 반드시 OFF
   }
@@ -1653,10 +1660,11 @@ function togglePause() {
     const ctx = getAudioCtx();
     if (ctx) ctx.suspend(); // 즉시 무음(엔진/효과음·배경음악은 syncAudio 가 함께 정지)
   } else {
-    // 재개도 3-2-1 후 출발. 여기서 직접 resume 하지 않는다 — 카운트다운 동안엔
-    // 엔진/효과음이 꺼져 있어야 하고, 카운트다운이 끝나면 syncAudio 가 매 프레임
-    // 상태를 보고 자동으로 되살린다(직접 resume 시 카운트다운 중 suspend 와 레이스 발생).
-    beginCountdown();
+    beginCountdown();        // 재개도 3-2-1 후 출발
+    // iOS: AudioContext.resume() 은 반드시 사용자 제스처(이 클릭) 안에서 호출해야 한다.
+    // 카운트다운 동안 컨텍스트는 켜 두고 엔진음은 게인으로 차단 → 카운트다운 후 엔진음 복원.
+    const ctx = getAudioCtx();
+    if (ctx) ctx.resume();
   }
 }
 function gameOver() {

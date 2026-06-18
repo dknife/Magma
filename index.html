@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Genesis Magma — 주행 시뮬레이션</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -106,6 +106,7 @@
       pointer-events: auto;     /* 더블클릭으로 전체화면↔작은창 전환 */
       cursor: pointer;
       user-select: none;
+      touch-action: manipulation; /* iOS 더블탭 확대(렌더 영역 어긋남) 방지 */
       z-index: 5;
       overflow: hidden;
     }
