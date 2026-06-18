@@ -485,14 +485,12 @@ let boostFlames = [];       // 좌/우 화염 메시
 let boostLight = null;      // 후방 청록색 포인트라이트
 
 // 전방 헤드라이트 섬광(앞차를 일정 거리로 따라잡으면 5회 번쩍)
-let headlightMat = null;    // 헤드라이트 발광 머티리얼
 let headlightLight = null;  // 전방 포인트라이트
 let headlightFlashDist = 0; // 섬광 트리거 거리(월드) — 모델 로드 후 설정
 const headlightFlash = { active: false, t: 0 };
 const HEADLIGHT_FLASH_PERIOD = 0.1; // 켜짐/꺼짐 한 구간(s)
 const HEADLIGHT_FLASH_COUNT = 5;    // 번쩍임 횟수
 function setHeadlight(on) {
-  if (headlightMat) headlightMat.emissiveIntensity = on ? 5 : 0;
   if (headlightLight) headlightLight.intensity = on ? headlightLight.userData.peak : 0;
 }
 function startHeadlightFlash() { headlightFlash.active = true; headlightFlash.t = 0; }
@@ -1386,20 +1384,10 @@ gltfLoader.load(
     boostLight.userData.peak = maxDim * 16; // 최대 발광 세기
     car.add(boostLight);
 
-    // 전방 헤드라이트(차 로컬 +X = 앞). 좌/우 2개 + 전방 포인트라이트.
+    // 전방 헤드라이트 섬광(차 로컬 +X = 앞). 전방 포인트라이트만 사용.
     // 앞차를 일정 거리로 따라잡으면 5회 번쩍이는 섬광 신호(평소엔 꺼짐).
-    headlightMat = new THREE.MeshStandardMaterial({
-      color: 0x1a1a1a, emissive: 0xfff2cc, emissiveIntensity: 0,
-      roughness: 0.25, metalness: 0.0, toneMapped: false, // 섬광이 강하게 보이도록 톤매핑 제외
-    });
-    const hlGeo = new THREE.BoxGeometry(size.x * 0.04, size.y * 0.10, size.z * 0.18);
     const frontX = size.x * 0.47;       // 차체 앞쪽
     const hlY = size.y * 0.40;          // 헤드라이트 높이
-    for (const sz of [-1, 1]) {
-      const hl = new THREE.Mesh(hlGeo, headlightMat);
-      hl.position.set(frontX, hlY, sz * size.z * 0.32);
-      car.add(hl);
-    }
     headlightLight = new THREE.PointLight(0xfff2cc, 0, size.x * 6, 2);
     headlightLight.position.set(frontX + size.x * 0.1, hlY, 0);
     headlightLight.userData.peak = maxDim * 14; // 섬광 시 최대 세기
