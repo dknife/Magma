@@ -8,7 +8,16 @@ import { Sky } from 'three/addons/objects/Sky.js';
 // 기본 설정값
 // ---------------------------------------------------------------------------
 const MODEL_URL = './meshes/GenesisMagma.opt.glb'; // Draco 지오메트리 + WebP 텍스처 압축본
-const RACEWAY_URL = './meshes/Raceway.opt.glb';     // 트랙 중심 배치용 압축본(Draco + WebP)
+const RACEWAY_URL = './meshes/Raceway.opt.glb';     // 트랙 둘레 배치용 압축본(Draco + WebP)
+const RACEWAY_COUNT = 24;            // 트랙 둘레에 늘어놓을 레이스웨이 메쉬 개수
+const RACEWAY_FILL = 0.9;            // 인접 메쉬 간격 대비 한 개가 차지하는 길이 비(겹침/틈 조절)
+const RACEWAY_SCALE = 2.0;           // 기본 크기 배율(둘레 간격 기준) — 두 배로 키움
+const RACEWAY_SCALE_JITTER = 0.35;   // 개체별 크기 무작위 변동(±비율) — 불규칙하게
+const RACEWAY_MARGIN = 1.2;          // 도로 가장자리에서 바깥으로 띄우는 기본량(roadHalfWidth 배수, 간섭 방지)
+const RACEWAY_RADIAL_JITTER = 1.0;   // 바깥 거리 개체별 무작위 추가량(roadHalfWidth 배수)
+const RACEWAY_POS_JITTER = 0.8;      // 둘레 위치 무작위 변동(슬롯 간격 대비 비율) — 불규칙한 간격
+const RACEWAY_YAW_OFFSET = 0;        // 메쉬 진행축이 트랙과 안 맞으면 Math.PI/2 등으로 보정
+const RACEWAY_YAW_JITTER = Math.PI;  // 개체별 무작위 회전 범위(±rad) — 똑같은 모습 방지
 const TOYOTA_URL = './meshes/Toyota.opt.glb';       // 트랙 전체를 도는 교통(traffic) 차량(압축본)
 const TOYOTA_COUNT = 20;                            // 트랙에 흩뿌릴 Toyota 대수
 const TOYOTA_SPEED_RATIO = 0.9;                     // 주인공 대비 속도. 높일수록 상대속도↓ → 천천히 지나감
@@ -729,47 +738,83 @@ function buildTrack(radius, roadHalfWidth) {
 }
 
 // ---------------------------------------------------------------------------
-// 레이스웨이(Raceway) — 주행 코스 중심(원점)에 배치
+// 레이스웨이(Raceway) — 주행 코스 둘레를 따라 빙 둘러 배치
 // ---------------------------------------------------------------------------
 // 압축본 Raceway.opt.glb 는 단위 스케일(약 1.9 유닛)로 정규화돼 있다.
-// 트랙은 원점을 둘러싼 닫힌 곡선이므로, 레이스웨이를 트랙 안쪽(인필드)에
-// 들어가도록 스케일·정렬해 코스 한가운데에 놓는다.
-function loadRaceway(trackRadius) {
+// 한 덩어리를 인필드 한가운데 놓는 대신, 같은 메쉬를 RACEWAY_COUNT 개 복제해
+// 트랙 곡선 전체에 균등 분포시키고(geometry/material 공유 → 가벼움), 각 개체를
+// 도로 바깥쪽 가장자리에 놓은 뒤 트랙 진행 방향(접선)에 맞춰 회전시켜 둘레 구조물처럼 만든다.
+function loadRaceway(roadHalfWidth) {
   gltfLoader.load(
     RACEWAY_URL,
     (gltf) => {
-      const racetrack = gltf.scene;
-      racetrack.traverse((obj) => {
+      const proto = gltf.scene;
+      proto.traverse((obj) => {
         if (obj.isMesh) {
           obj.castShadow = true;
           obj.receiveShadow = true;
         }
       });
 
-      // 바운딩 박스로 크기 측정 → 수평 footprint 를 트랙 인필드에 맞춰 스케일
-      let box = new THREE.Box3().setFromObject(racetrack);
-      const size = box.getSize(new THREE.Vector3());
+      // 한 개의 기본 크기: 곡선 둘레를 개수로 나눈 간격 × RACEWAY_FILL × RACEWAY_SCALE(두 배).
+      const length = drive.length;
+      const spacing = length / RACEWAY_COUNT;
+      const copySpan = spacing * RACEWAY_FILL * RACEWAY_SCALE;
+
+      // 수평 최대 치수를 copySpan 에 맞춰 스케일.
+      let box = new THREE.Box3().setFromObject(proto);
+      let size = box.getSize(new THREE.Vector3());
       const horiz = Math.max(size.x, size.z) || 1;
-      // 트랙 곡선의 내측 반경(약 0.5·trackRadius)에 들어가도록 지름을 잡는다.
-      const targetSpan = trackRadius * 0.9;
-      racetrack.scale.setScalar(targetSpan / horiz);
-      racetrack.updateMatrixWorld(true);
+      proto.scale.setScalar(copySpan / horiz);
+      proto.updateMatrixWorld(true);
 
-      // 스케일 적용 후 다시 측정해 XZ 중심을 원점으로 정렬.
-      // 바닥 정렬(min.y)은 떠 보이고 상단 정렬(max.y)은 지면 아래로 묻히므로,
-      // 수직 중심(center.y)을 기준으로 노면을 주행 평면(y=0) 근처에 두되,
-      // 살짝 위로 올려(높이의 약 25%) 노면이 바닥에 더 잘 드러나게 한다.
-      box = new THREE.Box3().setFromObject(racetrack);
+      // 스케일 적용 후 재측정 → XZ 중심 정렬 + 바닥 안착(min.y=0).
+      box = new THREE.Box3().setFromObject(proto);
       const center = box.getCenter(new THREE.Vector3());
-      const lift = (box.max.y - box.min.y) * 0.40; // 위로 올리는 양(스케일 비례)
-      racetrack.position.x -= center.x;
-      racetrack.position.z -= center.z;
-      racetrack.position.y -= center.y - lift;
+      size = box.getSize(new THREE.Vector3());
+      proto.position.x -= center.x;
+      proto.position.z -= center.z;
+      proto.position.y -= box.min.y;
 
-      scene.add(racetrack);
+      // 도로 중심선에서 바깥쪽으로 띄우는 기본 거리.
+      // 메쉬가 임의 각도로 회전하므로, 어느 방향으로 돌든 도로를 넘지 않도록
+      // 수평 footprint 의 "대각선 반경"(최대 뻗침)을 기준으로 삼는다. 개체별 크기
+      // 무작위 확대(최대 1+RACEWAY_SCALE_JITTER)까지 반영해 최악의 경우도 막는다.
+      const halfDiag = 0.5 * Math.hypot(size.x, size.z) * (1 + RACEWAY_SCALE_JITTER);
+      const baseOffset = roadHalfWidth + halfDiag + roadHalfWidth * RACEWAY_MARGIN;
+      const slot = 1 / RACEWAY_COUNT;
+
+      const curve = drive.curve;
+      const up = new THREE.Vector3(0, 1, 0);
+      const p = new THREE.Vector3();
+      const tan = new THREE.Vector3();
+      const lat = new THREE.Vector3();
+      for (let i = 0; i < RACEWAY_COUNT; i++) {
+        // 둘레 위치를 슬롯 안에서 무작위로 흔들어 간격을 불규칙하게.
+        let u = i * slot + (Math.random() - 0.5) * slot * RACEWAY_POS_JITTER;
+        u = (u % 1 + 1) % 1;
+        curve.getPointAt(u, p);
+        curve.getTangentAt(u, tan);
+        // 접선의 좌측 법선. 원점(코스 중심) 기준으로 바깥을 향하는 쪽을 고른다.
+        lat.crossVectors(up, tan).normalize();
+        const side = (lat.x * p.x + lat.z * p.z) >= 0 ? 1 : -1;
+        // 바깥 거리도 개체별로 무작위로 더 띄워 한 줄로 늘어서지 않게(간섭 방지).
+        const dist = baseOffset + Math.random() * roadHalfWidth * RACEWAY_RADIAL_JITTER;
+
+        const rig = new THREE.Group();
+        rig.add(proto.clone());
+        rig.position.set(p.x + lat.x * side * dist, 0, p.z + lat.z * side * dist);
+        // 접선 정렬을 기본으로 두되 개체별 무작위 회전을 더해 똑같은 모습을 피한다.
+        rig.rotation.y = Math.atan2(-tan.z, tan.x) + RACEWAY_YAW_OFFSET +
+          (Math.random() * 2 - 1) * RACEWAY_YAW_JITTER;
+        // 크기도 개체별로 ±RACEWAY_SCALE_JITTER 범위에서 무작위 변동(바닥 안착 유지).
+        rig.scale.setScalar(1 + (Math.random() * 2 - 1) * RACEWAY_SCALE_JITTER);
+        scene.add(rig);
+      }
+
       console.log(
-        `[Raceway] 로드 완료 — 배치 footprint ≈ ${targetSpan.toFixed(1)} ` +
-        `(트랙 반경 ${trackRadius.toFixed(1)})`
+        `[Raceway] 둘레 배치 완료 — ${RACEWAY_COUNT}개 ` +
+        `(간격 ≈ ${spacing.toFixed(1)}, 개당 기본 span ≈ ${copySpan.toFixed(1)})`
       );
     },
     undefined,
@@ -1030,8 +1075,8 @@ gltfLoader.load(
     const roadHalfWidth = size.x * 1.8;      // 도로 폭(차폭 기준)
     buildTrack(trackRadius, roadHalfWidth);
 
-    // 레이스웨이를 코스 중심(원점)에 배치
-    loadRaceway(trackRadius);
+    // 레이스웨이 메쉬를 트랙 둘레 전체에 빙 둘러 배치
+    loadRaceway(roadHalfWidth);
 
     // 교통 차량(Toyota) N대를 트랙 전체에 흩뿌려 각자 주행시킴
     loadToyota(size, TOYOTA_COUNT);

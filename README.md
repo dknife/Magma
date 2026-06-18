@@ -44,14 +44,14 @@ npx @gltf-transform/cli optimize meshes/GenesisMagma.glb meshes/GenesisMagma.opt
   --compress draco --texture-compress webp --texture-size 1024
 ```
 
-트랙 중심에 배치하는 `Raceway.glb`(16.0 MB)도 같은 방식으로 `Raceway.opt.glb`(약 1.54 MB)로 압축해 사용합니다.
+트랙 둘레에 배치하는 `Raceway.glb`(16.0 MB)도 같은 방식으로 `Raceway.opt.glb`(약 1.54 MB)로 압축해 사용합니다.
 
 ```bash
 npx @gltf-transform/cli optimize meshes/Raceway.glb meshes/Raceway.opt.glb \
   --compress draco --texture-compress webp --texture-size 2048
 ```
 
-레이스웨이는 단위 스케일로 정규화돼 있어, 로드 시 트랙 인필드 크기에 맞춰 스케일링하고 코스 중심(원점)에 바닥 안착시켜 배치합니다.
+레이스웨이는 단위 스케일로 정규화돼 있어, 같은 메쉬를 `RACEWAY_COUNT`(기본 24)개 복제(geometry/material 공유)해 트랙 곡선 전체에 분포시킵니다. 각 개체는 둘레 간격의 약 두 배(`RACEWAY_SCALE`) 크기로 스케일링한 뒤 도로 바깥쪽으로 충분히 띄워(`RACEWAY_MARGIN`) 바닥 안착시킵니다. 단조로움을 피하려고 둘레 위치·바깥 거리·크기·회전을 개체마다 무작위로 흔들어(`RACEWAY_*_JITTER`) 불규칙하게 늘어놓습니다.
 
 교통 차량 `Toyota.glb`(13.1 MB)도 같은 방식으로 `Toyota.opt.glb`(약 0.48 MB)로 압축해 사용합니다.
 
