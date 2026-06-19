@@ -136,11 +136,11 @@
     #btn-right { right: 24px; }
     .touch-btn:active { background: rgba(255, 106, 61, 0.35); }
 
-    /* 속도계(화면 왼쪽) */
+    /* 속도계(화면 왼쪽, 세로 중앙↔바닥의 중간 = 75%) */
     #speedo {
       position: fixed;
       left: 18px;
-      top: 50%;
+      top: 75%;
       transform: translateY(-50%);
       width: 190px;
       font-family: "Segoe UI", system-ui, sans-serif;
@@ -162,6 +162,22 @@
     }
     #speedo-readout #speed-val { font-size: 32px; font-weight: 800; color: #fff; }
     #speedo-readout .unit { font-size: 13px; margin-left: 5px; color: #9aa0a6; letter-spacing: 0.08em; }
+
+    /* 트랙 미니맵(화면 오른쪽, 속도계와 대칭 위치) — 코스 선 + 차량 점 */
+    #trackmap {
+      position: fixed;
+      right: 18px;
+      top: 75%;
+      transform: translateY(-50%);
+      width: 170px;
+      height: 170px;
+      border-radius: 12px;
+      background: rgba(10, 16, 24, 0.32);
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+      pointer-events: none;
+      user-select: none;
+      z-index: 5;
+    }
 
     /* 점수 */
     #score {
@@ -348,6 +364,7 @@
     body.titlescreen #score,
     body.titlescreen #diamonds,
     body.titlescreen #speedo,
+    body.titlescreen #trackmap,
     body.titlescreen #minimap,
     body.titlescreen .touch-btn,
     body.titlescreen #celebrate { display: none !important; }
@@ -534,7 +551,7 @@
   <div id="credit"><b>동명대학교 게임그래픽학과</b> · Y.M. Kang</div>
 
   <div id="minimap">
-    <div class="hint">Double Tap to Switch</div>
+    <div class="hint">Tap to Switch View</div>
     <div class="label">COCKPIT</div>
     <button id="pause-btn" aria-label="일시정지">⏸</button>
   </div>
@@ -552,6 +569,8 @@
     </svg>
     <div id="speedo-readout"><span id="speed-val">0</span><span class="unit">km/h</span></div>
   </div>
+
+  <canvas id="trackmap"></canvas>
 
   <div id="score">SCORE<b id="score-val">0</b><span class="best">BEST<b id="best-val">0</b></span></div>
   <div id="diamonds">◆◆◆◆◆</div>
