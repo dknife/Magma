@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "기본 권한 — 순수 WebView 게임이라 코어 기본 권한만 사용",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

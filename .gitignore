@@ -17,3 +17,9 @@ Thumbs.db
 # 원본(비압축) 모델 — 압축본(*.opt.glb)만 커밋
 meshes/*.glb
 !meshes/*.opt.glb
+
+# Tauri / 네이티브 빌드 산출물
+dist/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/icons/

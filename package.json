@@ -5,6 +5,13 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "web:copy": "node scripts/copy-web.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
   }
 }
