@@ -236,44 +236,58 @@
     #pause-btn:active { background: rgba(255, 106, 61, 0.55); }
 
     /* 게임오버 / 재시작 */
+    /* 게임오버: 인트로와 동일한 일러스트 연출 + 최종 스코어만. 클릭/터치로 재시작 */
     #gameover {
       position: fixed;
       inset: 0;
       display: flex;
-      flex-direction: column;
       align-items: center;
-      justify-content: space-between;
-      padding: 7vh 0;
-      background: transparent; /* 배경은 3D 패스에서 이미 어둡게 처리됨 */
+      justify-content: center;
+      background:
+        radial-gradient(120% 120% at 50% 0%, rgba(255, 60, 30, 0.18), rgba(8, 9, 12, 0) 60%),
+        #08090c;
       font-family: "Segoe UI", system-ui, sans-serif;
-      color: #fff;
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
       z-index: 20;
     }
     #gameover.hidden { display: none; }
-    #gameover .go-head { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-    #gameover .go-title {
-      font-size: clamp(34px, 7vw, 72px);
-      font-weight: 900;
-      letter-spacing: 0.08em;
-      color: #ff4a2e;
-      text-shadow: 0 3px 24px rgba(255, 60, 30, 0.5);
+    #gameover::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: url('./illust/gameover.png') center / cover no-repeat;
+      filter: blur(34px) brightness(0.4) saturate(1.1);
+      transform: scale(1.18);
+      z-index: 0;
     }
-    #gameover .go-score { font-size: clamp(16px, 2.4vw, 24px); letter-spacing: 0.16em; color: #cdd3da; }
-    #gameover .go-score span { color: #fff; font-weight: 800; }
-    #restart-btn {
-      margin-top: 8px;
-      padding: 12px 30px;
-      font-size: 18px;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      color: #fff;
-      background: #ff6a3d;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+    #gameover-art {
+      position: relative;
+      z-index: 1;
+      max-width: 96vw;
+      max-height: 92vh;
+      object-fit: contain;
+      border-radius: 14px;
+      box-shadow: 0 18px 70px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
     }
-    #restart-btn:active { transform: translateY(1px); }
+    #gameover-score {
+      position: absolute;
+      top: clamp(14px, 4vh, 40px);
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+      padding: 8px 22px;
+      border-radius: 999px;
+      background: rgba(8, 9, 12, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: clamp(15px, 2.4vw, 24px);
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      color: #cdd3da;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+    }
+    #gameover-score span { color: #fff; }
 
     /* 시작/재개 3-2-1 카운트다운 */
     #countdown {
@@ -369,6 +383,119 @@
     body.titlescreen .touch-btn,
     body.titlescreen #celebrate { display: none !important; }
 
+    /* 인트로 스플래시: 일러스트 + 테마 배경. 클릭하면 타이틀로 진입 */
+    #intro {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      /* 정사각 포스터로는 못 채우는 좌우 여백을 같은 일러스트의 블러본으로 메워 자연스럽게 */
+      background:
+        radial-gradient(120% 120% at 50% 0%, rgba(255, 106, 61, 0.18), rgba(10, 12, 16, 0) 60%),
+        #08090c;
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      z-index: 40;
+      transition: opacity 0.45s ease;
+    }
+    #intro.hidden { opacity: 0; pointer-events: none; }
+    /* 좌우를 채우는 블러 배경(일러스트 확대본) */
+    #intro::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: url('./illust/title_main.png') center / cover no-repeat;
+      filter: blur(34px) brightness(0.45) saturate(1.1);
+      transform: scale(1.18);
+      z-index: 0;
+    }
+    #intro-art {
+      position: relative;
+      z-index: 1;
+      max-width: 96vw;
+      max-height: 92vh;
+      object-fit: contain;
+      border-radius: 14px;
+      box-shadow: 0 18px 70px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
+      animation: introPop 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    @keyframes introPop {
+      from { opacity: 0; transform: scale(0.96); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+    #intro-hint {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 2;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: clamp(13px, 2vw, 18px);
+      font-weight: 800;
+      letter-spacing: 0.18em;
+      color: #ffe7a3;
+      text-shadow: 0 2px 14px rgba(0, 0, 0, 0.8);
+      pointer-events: none;
+      animation: introBlink 1.4s ease-in-out infinite;
+    }
+    @keyframes introBlink {
+      0%, 100% { opacity: 0.35; }
+      50%      { opacity: 1; }
+    }
+
+    /* 일시정지 화면: 인트로와 동일한 일러스트 + 가운데 복귀 안내(클릭/터치로 복귀) */
+    #pausescreen {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background:
+        radial-gradient(120% 120% at 50% 0%, rgba(255, 106, 61, 0.18), rgba(10, 12, 16, 0) 60%),
+        #08090c;
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      z-index: 21; /* HUD 위, 카운트다운(22) 아래 → 복귀 시 카운트다운이 위로 보임 */
+      transition: opacity 0.45s ease;
+    }
+    #pausescreen.hidden { opacity: 0; pointer-events: none; }
+    #pausescreen::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: url('./illust/title_illust.png') center / cover no-repeat;
+      filter: blur(34px) brightness(0.45) saturate(1.1);
+      transform: scale(1.18);
+      z-index: 0;
+    }
+    #pause-art {
+      position: relative;
+      z-index: 1;
+      max-width: 96vw;
+      max-height: 92vh;
+      object-fit: contain;
+      border-radius: 14px;
+      box-shadow: 0 18px 70px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    }
+    #pause-hint {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 2;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: clamp(14px, 2.2vw, 20px);
+      font-weight: 800;
+      letter-spacing: 0.18em;
+      color: #ffe7a3;
+      text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85);
+      pointer-events: none;
+      animation: introBlink 1.4s ease-in-out infinite;
+    }
+
     /* 타이틀 오버레이: 위=제목, 아래=버튼. 가운데는 비워 회전 차량이 보이게 */
     #title {
       position: fixed;
@@ -432,6 +559,33 @@
       background: rgba(20, 23, 28, 0.5);
       border: 1px solid rgba(255, 106, 61, 0.7);
     }
+
+    /* 차량 선택 좌우 화살표(가운데 회전 차량 양옆) */
+    #title .car-arrow {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: clamp(48px, 8vw, 74px);
+      height: clamp(48px, 8vw, 74px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: clamp(24px, 4vw, 40px);
+      font-weight: 900;
+      color: #ffd9c7;
+      background: rgba(20, 23, 28, 0.45);
+      border: 1px solid rgba(255, 106, 61, 0.7);
+      border-radius: 50%;
+      cursor: pointer;
+      pointer-events: auto;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.08s ease, background 0.15s ease;
+      z-index: 16;
+    }
+    #title .car-arrow:hover { background: rgba(255, 106, 61, 0.35); }
+    #title .car-arrow:active { transform: translateY(-50%) scale(0.92); }
+    #car-prev { left: clamp(12px, 5vw, 64px); }
+    #car-next { right: clamp(12px, 5vw, 64px); }
 
     /* HOW TO 안내 카드 */
     #howto {
@@ -514,12 +668,21 @@
   <!-- 배경 음악(게임 플레이 중에만 재생) -->
   <audio id="bgm" src="./TUGameSong.mp3" loop preload="auto"></audio>
 
-  <!-- 첫 화면(타이틀): 게임은 아직 멈춰 있고 중앙에서 차량만 회전 -->
+  <!-- 인트로 일러스트(스플래시): 클릭하면 타이틀 화면으로 진입 -->
+  <div id="intro" class="hidden">
+    <img id="intro-art" src="./illust/title_main.png" alt="Ready 4 Dash" />
+    <div id="intro-hint">화면을 클릭하여 시작 · TAP TO START</div>
+  </div>
+
+  <!-- 첫 화면(타이틀): 게임은 아직 멈춰 있고 중앙에서 선택한 차량이 회전 -->
   <div id="title" class="hidden">
     <div class="t-head">
-      <div class="t-name">Ready 4 DASH</div>
-      <div class="t-sub">GAME made in TU</div>
+      <div class="t-name">Select Your Machine</div>
+      <div class="t-sub" id="car-sub">Genesis Magma - 한국 최초 Le Mans 24시 완주</div>
     </div>
+    <!-- 좌우 화살표로 주인공 차량 메시 선택(가운데 회전 차량이 바뀜) -->
+    <button id="car-prev" class="car-arrow" aria-label="이전 차량">◀</button>
+    <button id="car-next" class="car-arrow" aria-label="다음 차량">▶</button>
     <div class="t-actions">
       <button id="start-btn">START</button>
       <button id="howto-btn">HOW TO</button>
@@ -531,7 +694,7 @@
     <div class="howto-card">
       <div class="howto-title">HOW TO PLAY</div>
       <ul>
-        <li>제네시스 마그마는 자동으로 질주합니다.</li>
+        <li>여러분의 차는 자동으로 질주합니다.</li>
         <li>좌우 화살표/버튼을 눌러 조정하세요.</li>
         <li>앞서 가는 차량을 추월하면 50점 가산.</li>
         <li>현재의 속도가 점수로 누적됩니다.</li>
@@ -575,12 +738,16 @@
   <div id="score">SCORE<b id="score-val">0</b><span class="best">BEST<b id="best-val">0</b></span></div>
   <div id="diamonds">◆◆◆◆◆</div>
 
+  <!-- 게임오버: gameover.png 일러스트 + 최종 스코어만. 클릭/터치/스페이스로 재시작 -->
   <div id="gameover" class="hidden">
-    <div class="go-head">
-      <div class="go-title">GAME OVER</div>
-      <div class="go-score">SCORE <span>0</span></div>
-    </div>
-    <button id="restart-btn">RESTART</button>
+    <img id="gameover-art" src="./illust/gameover.png" alt="GAME OVER" />
+    <div id="gameover-score">SCORE <span>0</span></div>
+  </div>
+
+  <!-- 일시정지 화면: 모델 전시 대신 타이틀 일러스트 + 가운데 복귀 안내. 클릭/터치로 복귀 -->
+  <div id="pausescreen" class="hidden">
+    <img id="pause-art" src="./illust/title_illust.png" alt="" />
+    <div id="pause-hint">클릭하여 게임 복귀 · TAP TO DASH</div>
   </div>
 
   <div id="countdown" class="hidden"><span id="countdown-num">3</span></div>

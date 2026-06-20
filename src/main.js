@@ -19,8 +19,9 @@ const RACEWAY_RADIAL_JITTER = 1.0;   // 바깥 거리 개체별 무작위 추가
 const RACEWAY_POS_JITTER = 0.8;      // 둘레 위치 무작위 변동(슬롯 간격 대비 비율) — 불규칙한 간격
 const RACEWAY_YAW_OFFSET = 0;        // 메쉬 진행축이 트랙과 안 맞으면 Math.PI/2 등으로 보정
 const RACEWAY_YAW_JITTER = Math.PI;  // 개체별 무작위 회전 범위(±rad) — 똑같은 모습 방지
-const TOYOTA_URL = './meshes/Toyota.opt.glb';       // 트랙 전체를 도는 교통(traffic) 차량(압축본)
-const TOYOTA_COUNT = 20;                            // 트랙에 흩뿌릴 Toyota 대수
+const TOYOTA_URL = './meshes/Toyota.opt.glb';       // 교통(traffic) 차량 모델 ②(압축본)
+const TURACER_URL = './meshes/TURacer.opt.glb';     // 교통/주인공 차량 모델 ③ — 기본 선택(압축본)
+const TOYOTA_COUNT = 20;                            // 트랙에 흩뿌릴 교통 차량 대수(세 모델 무작위)
 const TREE_URL = './meshes/tree.opt.glb';           // 트랙 안팎 조경용 나무(압축본)
 const TREE_COUNT = 140;                             // 트랙 안팎에 흩뿌릴 나무 그루 수
 const TREE_SIZE_FACTOR = 1.4;                       // 나무 높이 기준 크기(roadHalfWidth 배수, 스케일 1 기준)
@@ -390,8 +391,15 @@ const drive = {
 // 좌/우 화살표 키 입력(주행선 횡오프셋 조정)
 const keyInput = { left: false, right: false };
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowLeft') { keyInput.left = true; e.preventDefault(); }
-  else if (e.key === 'ArrowRight') { keyInput.right = true; e.preventDefault(); }
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    if (!game.started) { cycleCar(-1); return; } // 타이틀 화면에선 차량 선택
+    keyInput.left = true;
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    if (!game.started) { cycleCar(1); return; }
+    keyInput.right = true;
+  }
 });
 window.addEventListener('keyup', (e) => {
   if (e.key === 'ArrowLeft') keyInput.left = false;
@@ -499,7 +507,7 @@ if (bgmEl) bgmEl.volume = 0.22; // 엔진음·충돌음(효과음)을 가리지 
 function syncAudio() {
   // 배경 음악은 진행 중(카운트다운 포함) 재생. 엔진/효과음 컨텍스트는 진행 중엔 켜 두고,
   // 엔진음 자체는 카운트다운이 끝난 실제 주행 중에만(게인으로 차단 — iOS resume 제스처 문제 회피).
-  const playing = game.started && !game.paused && !game.over;
+  const playing = game.started && !game.paused && !game.over && !game.frozen;
   const engineOn = playing && game.countdown <= 0;
   // 배경 음악: 진행 중이면 재생, 그 외엔 일시정지
   if (bgmEl) {
@@ -696,6 +704,74 @@ let cockpitMain = false;        // true=조종석 시점이 전체화면, 게임
 let showcaseGroup = null;       // 정지/게임오버 시 눈앞 전시용 차량(기울임·위치)
 let showcaseSpinner = null;     // 그 안에서 Y축으로 도는 회전 그룹
 let showcaseAngle = 0;          // 전시 회전 각도
+
+// 차량 선택(타이틀 화면): 좌우 화살표로 주인공 메시를 고른다.
+// 각 옵션의 model 은 +X 정면·바닥 안착·동일 덩치로 정규화된 Object3D(로드 시 채움).
+let heroModel = null;           // 현재 차 리그 안의 주인공 메시
+let showcaseModel = null;       // 현재 전시(회전) 클론
+let selectedCar = 2;            // 0 = Genesis Magma, 1 = Toyota, 2 = TU Racer(기본 선택)
+const carOptions = [
+  { name: 'Genesis Magma', sub: 'Genesis Magma - 한국 최초 Le Mans 24시 완주', model: null, ready: false },
+  { name: 'Toyota',        sub: 'Toyota - 2026 Le Mans 우승',                  model: null, ready: false },
+  { name: 'TU GAME Racer', sub: 'TU GAME Racer - 미래로 달리는 동명의 게임',       model: null, ready: false },
+];
+const carSubEl = document.getElementById('car-sub');
+
+// 전시(쇼케이스)용 클론 생성: 전용 레이어 + 머티리얼 복제(toneMapped 제외)로
+// 어두운 노출의 영향을 받지 않고 모델만 밝게 회전시켜 보여 준다.
+function makeShowcaseClone(model) {
+  const c = model.clone();
+  c.traverse((o) => {
+    o.layers.set(SHOWCASE_LAYER);
+    if (o.isMesh) {
+      o.castShadow = false;
+      o.receiveShadow = false;
+      if (Array.isArray(o.material)) {
+        o.material = o.material.map((m) => { const x = m.clone(); x.toneMapped = false; return x; });
+      } else {
+        o.material = o.material.clone();
+        o.material.toneMapped = false;
+      }
+    }
+  });
+  return c;
+}
+
+// 주인공 메시 교체(차 리그 안). 브레이크등/부스터 화염 등 다른 자식은 그대로 둔다.
+function setHeroModel(model) {
+  if (heroModel && heroModel.parent === car) car.remove(heroModel);
+  heroModel = model;
+  car.add(heroModel);
+}
+
+// 전시 클론 교체(쇼케이스 스피너 안).
+function setShowcaseModel(model) {
+  if (!showcaseSpinner) return;
+  if (showcaseModel) showcaseSpinner.remove(showcaseModel);
+  showcaseModel = makeShowcaseClone(model);
+  showcaseSpinner.add(showcaseModel);
+}
+
+// 현재 선택을 화면(주행 차량·전시 차량·부제)에 반영.
+function applyCarSelection() {
+  const opt = carOptions[selectedCar];
+  if (!opt || !opt.ready || !opt.model) return;
+  setHeroModel(opt.model);
+  setShowcaseModel(opt.model);
+  if (carSubEl) carSubEl.textContent = opt.sub;
+}
+
+// 좌우 화살표/버튼으로 준비된 차량만 순환 선택(게임 시작 전에만).
+function cycleCar(dir) {
+  if (game.started) return;
+  const n = carOptions.length;
+  let i = selectedCar;
+  for (let k = 0; k < n; k++) {
+    i = (i + dir + n) % n;
+    if (carOptions[i].ready) { selectedCar = i; break; }
+  }
+  applyCarSelection();
+}
 const camFollow = {
   prev: new THREE.Vector3(),
   ready: false,
@@ -961,21 +1037,70 @@ function buildTrack(radius, roadHalfWidth) {
   road.receiveShadow = true;
   scene.add(road);
 
-  // 트랙 가장자리 빗금(줄무늬) 문양 — 좌/우 가장자리에 적/백 교대 띠를 연속 배치.
-  // 곡선을 따라 STRIPE_SEGS 구간으로 나눠 한 칸씩 색을 번갈아 칠한다(레이스 커브 느낌).
+  // 연석(가장자리 빗금) — 곡률에 따라 바깥쪽(코너 외측)을 더 두껍게 만들고,
+  // 일정 곡률 이상(급코너)이면 노란색, 그 외(완만/직선)는 파란색 무늬를 흰색과 교대로 칠한다.
   const STRIPE_SEGS = 300;                  // 줄무늬 교대 분할 수
-  const bandWidth = roadHalfWidth * 0.12;   // 가장자리 띠 폭(도로 안쪽으로)
+  const baseBand = roadHalfWidth * 0.12;    // 기본 연석 폭(= 파란색 연석 두께)
+  const CURB_SHARP_THRESH = 0.25;           // 이 곡률(sharp) 이상이면 노란색(낮출수록 노랑 구간이 길어짐)
+  const YELLOW_PEAK = 3;                     // 노란색 구간 바깥쪽 연석 최대 두께(파란색 대비 배율)
+  // 세그먼트별 곡률(sharp)·회전부호(cross.y) 미리 계산 — 양쪽 연석이 같은 u 기준을 쓰도록.
+  const segSharp = new Array(STRIPE_SEGS);
+  const segTurn = new Array(STRIPE_SEGS);
+  {
+    const ta = new THREE.Vector3(), tb = new THREE.Vector3();
+    for (let i = 0; i < STRIPE_SEGS; i++) {
+      const u = i / STRIPE_SEGS;
+      curve.getTangentAt(u, ta);
+      curve.getTangentAt((u + CORNER_EPS) % 1, tb);
+      segSharp[i] = Math.min(ta.angleTo(tb) / TURN_MAX, 1);   // 0=직선, 1=급코너
+      segTurn[i] = ta.z * tb.x - ta.x * tb.z;                 // 접선 변화의 외적 y성분(회전 방향)
+    }
+  }
+  // 바깥쪽 연석 두께 배율(humpOut): 노란색(급코너) 구간마다 파란색 두께(1배)에서 시작해
+  // 가운데에서 YELLOW_PEAK(3배)까지 부풀었다가 다시 1배로 줄어드는 사인 험프를 만든다.
+  // 닫힌 루프이므로 '노랑이 아닌' 지점에서부터 구간을 끊어 처리(구간이 0을 넘어 감기지 않게).
+  const N = STRIPE_SEGS;
+  const isYellow = segSharp.map((s) => s >= CURB_SHARP_THRESH);
+  const humpOut = new Array(N).fill(1);
+  const fillRun = (start, len) => {
+    for (let j = 0; j < len; j++) {
+      const t = (j + 0.5) / len;             // 구간 내 위치(0~1) — 가운데(0.5)에서 최대
+      humpOut[(start + j) % N] = 1 + (YELLOW_PEAK - 1) * Math.sin(Math.PI * t);
+    }
+  };
+  if (isYellow.every(Boolean)) {
+    fillRun(0, N);                           // 전 구간이 노랑이면 루프 전체를 하나의 험프로
+  } else if (isYellow.some(Boolean)) {
+    let base = 0; while (isYellow[base]) base++; // 노랑이 아닌 시작점(여기서 끊으면 구간 안 감김)
+    let i = 0;
+    while (i < N) {
+      if (!isYellow[(base + i) % N]) { i++; continue; }
+      let len = 0;
+      while (len < N && isYellow[(base + i + len) % N]) len++;
+      fillRun((base + i) % N, len);
+      i += len;
+    }
+  }
   const sPos = [], sCol = [], sIdx = [];
   const sp = new THREE.Vector3(), stan = new THREE.Vector3(), slat = new THREE.Vector3();
-  const colA = new THREE.Color(0xd83a2e), colB = new THREE.Color(0xefefef); // 적 / 백
+  const colWhite = new THREE.Color(0xefefef);
+  const colYellow = new THREE.Color(0xf2c014); // 급코너 경고
+  const colBlue = new THREE.Color(0x2f6cf0);   // 완만/직선
   let vbase = 0;
   for (let side = 0; side < 2; side++) {
-    const outer = side === 0 ? roadHalfWidth : -roadHalfWidth;
-    const inner = side === 0 ? roadHalfWidth - bandWidth : -(roadHalfWidth - bandWidth);
+    const latSign = side === 0 ? 1 : -1;       // +lat = up×tan 방향(코스 진행 기준 한쪽)
     for (let i = 0; i < STRIPE_SEGS; i++) {
-      const col = i % 2 === 0 ? colA : colB;
+      const sharp = segSharp[i];
+      const isOuter = latSign * segTurn[i] < 0;            // 이 변이 코너 바깥쪽인가
+      // 바깥쪽은 험프 배율(노랑 구간에서 1→3→1)로 두껍게, 안쪽은 항상 기본 두께.
+      const band = baseBand * (isOuter ? humpOut[i] : 1);
+      // 두꺼워질 때 항상 도로 '바깥'으로만 넓어지게: 도로쪽 경계는 고정, 바깥 경계만 밀어낸다.
+      const innerEdge = latSign * (roadHalfWidth - baseBand);        // 도로쪽 경계(고정)
+      const outerEdge = latSign * (roadHalfWidth - baseBand + band); // 바깥 경계(두께만큼 도로 밖으로)
+      const accent = sharp >= CURB_SHARP_THRESH ? colYellow : colBlue;
+      const col = i % 2 === 0 ? accent : colWhite;          // 무늬색 ↔ 흰색 교대
       const u0 = i / STRIPE_SEGS, u1 = (i + 1) / STRIPE_SEGS;
-      for (const [u, off] of [[u0, inner], [u0, outer], [u1, inner], [u1, outer]]) {
+      for (const [u, off] of [[u0, innerEdge], [u0, outerEdge], [u1, innerEdge], [u1, outerEdge]]) {
         curve.getPointAt(u, sp);
         curve.getTangentAt(u, stan);
         slat.crossVectors(up, stan).normalize();
@@ -1004,8 +1129,8 @@ function buildTrack(radius, roadHalfWidth) {
   // 곡선을 LANE_CELLS 칸으로 나눠 각 칸의 앞부분(LANE_DASH_FRAC)만 칠해 점선을 만든다.
   // 대시 길이를 이전의 70%로 줄이되 빈칸(간격)은 유지: 이전 대시 0.45/120·간격 0.55/120 →
   // 새 대시 0.315/120, 주기 0.865/120 → 칸 수 ≈139, 한 칸 내 대시 비율 ≈0.365.
-  const LANE_CELLS = 139;                       // 점선 칸 수(간격 유지 위해 120→139)
-  const LANE_DASH_FRAC = 0.365;                 // 한 칸에서 대시가 차지하는 비율(대시 길이 70%)
+  const LANE_CELLS = 85;                        // 점선 칸 수(대시 길이 유지, 빈칸만 2배: 139→85)
+  const LANE_DASH_FRAC = 0.223;                 // 한 칸에서 대시가 차지하는 비율(대시 길이는 139·0.365 와 동일)
   const laneHalfW = roadHalfWidth * 0.02;       // 차선 표시선 폭(이전 0.04의 절반)
   const LANE_OFFSETS = [-roadHalfWidth * 0.5, 0, roadHalfWidth * 0.5]; // 좌중간·중앙·우중간
   const lPos = [], lIdx = [];
@@ -1036,40 +1161,6 @@ function buildTrack(radius, roadHalfWidth) {
   );
   lane.receiveShadow = true;
   scene.add(lane);
-
-  // 자잘한 이물질: 차가 지나는 길(트랙) 위에 도로 폭 안으로 흩뿌린다.
-  const DEBRIS_COUNT = 600;
-  const debrisGeo = new THREE.IcosahedronGeometry(1, 0); // 단위 크기, 인스턴스마다 스케일
-  const debrisMat = new THREE.MeshStandardMaterial({
-    color: 0x6b6258, roughness: 1.0, metalness: 0.0, // 흙/돌조각 느낌
-  });
-  const debris = new THREE.InstancedMesh(debrisGeo, debrisMat, DEBRIS_COUNT);
-  debris.castShadow = true;
-  debris.receiveShadow = true;
-
-  const m = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  const e = new THREE.Euler();
-  const scl = new THREE.Vector3();
-  const baseSize = roadHalfWidth * 0.015; // 도로 폭 대비 자잘한 크기(더 작게)
-  for (let i = 0; i < DEBRIS_COUNT; i++) {
-    const u = Math.random();
-    curve.getPointAt(u, p);
-    curve.getTangentAt(u, tan);
-    lat.crossVectors(up, tan).normalize();
-    const off = (Math.random() * 2 - 1) * roadHalfWidth * 0.9; // 도로 폭 안에서 좌우
-    const s = baseSize * (0.5 + Math.random());
-    e.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-    q.setFromEuler(e);
-    scl.set(s, s * (0.4 + Math.random() * 0.6), s); // 납작하게 살짝 변형
-    p.x += lat.x * off;
-    p.z += lat.z * off;
-    p.y = 0.02 + s * 0.4; // 트랙 표면 위에 놓이도록
-    m.compose(p, q, scl);
-    debris.setMatrixAt(i, m);
-  }
-  debris.instanceMatrix.needsUpdate = true;
-  scene.add(debris);
 }
 
 // ---------------------------------------------------------------------------
@@ -1251,6 +1342,14 @@ function loadTrees(roadHalfWidth, trackRadius) {
 const people = []; // { mixer, rig, u, du, lat }
 // 사람 모델의 정면 보정. 정면 = 진행 방향(0). 뒷걸음으로 보이면 Math.PI 로 바꾼다.
 const PEOPLE_YAW_OFFSET = 0;
+// 사람 애니메이션 컬링용: 카메라 절두체 밖이면서 차에서 먼 사람은 스켈레톤 갱신을 생략한다.
+// (Three.js 는 '렌더링'만 절두체 컬링하고, 스켈레톤 mixer 갱신은 화면 밖이라도 계속 돈다.)
+const _frustums = [new THREE.Frustum(), new THREE.Frustum()]; // 체이스 + 조종석 카메라용
+const _peopleCams = [null, null]; // 매 프레임 [camera, miniCam] 으로 갱신(재할당 없이 재사용)
+const _cullMat = new THREE.Matrix4();
+const _cullSphere = new THREE.Sphere(new THREE.Vector3(), 1);
+let cullSphereR = 1;   // 사람 1인 바운딩 반경(절두체 판정 여유) — 모델 로드 후 설정
+let cullNearR2 = 0;    // 이 거리(제곱) 안의 사람은 시야와 무관하게 항상 애니메이션 — 로드 후 설정
 
 function loadPeople(refSize, roadHalfWidth) {
   const targetH = refSize.y * 3.6;         // 사람 키(2.4에서 1.5배로 키움)
@@ -1301,15 +1400,25 @@ function spawnPeopleType(url, count, targetH, roadHalfWidth, baseSpeed, kind) {
 }
 
 // 매 프레임: 애니메이션 갱신 + 트랙 곡선을 따라 이동 + 진행 방향으로 회전.
-function updatePeople(dt) {
+// cams: 이번 프레임에 실제로 그려지는 카메라들(체이스/조종석). 이들 시야 밖이면서
+// 차에서도 먼 사람은 스켈레톤 갱신(고비용)을 생략해 성능을 아낀다.
+function updatePeople(dt, cams) {
   if (!drive.curve) return;
   // 충돌 후 스핀·주행선 복귀 중에는 사람을 렌더링하지 않는다.
   // (제어를 잃고 주행선으로 되돌아오는 동안 도로변 사람과 부딪히는 장면 방지)
   const hidePeople = drive.state !== 'drive';
+  // 렌더되는 카메라들의 절두체를 미리 계산(사람마다 재계산하지 않도록).
+  let nf = 0;
+  for (const cam of cams) {
+    if (!cam || nf >= _frustums.length) continue;
+    _cullMat.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    _frustums[nf].setFromProjectionMatrix(_cullMat);
+    nf++;
+  }
   for (const p of people) {
     if (p.rig.visible === hidePeople) p.rig.visible = !hidePeople;
     if (hidePeople) continue;            // 숨김 중엔 애니메이션·이동도 멈춰 둔다
-    p.mixer.update(dt);
+    // 위치·방향은 항상 갱신(저비용) → 컬링 판정이 정확하고, 재등장 시 위치가 튀지 않는다.
     p.u = (p.u + p.du * dt + 1) % 1;
     drive.curve.getPointAt(p.u, _pos);
     drive.curve.getTangentAt(p.u, _tan);
@@ -1318,6 +1427,16 @@ function updatePeople(dt) {
     // 진행(접선) 방향을 바라보게: 이동 방향 = sign(du)·접선
     const sgn = p.du >= 0 ? 1 : -1;
     p.rig.rotation.y = Math.atan2(sgn * _tan.x, sgn * _tan.z) + PEOPLE_YAW_OFFSET;
+    // 스켈레톤 애니메이션(고비용)은 근거리이거나 카메라 시야 안일 때만 갱신.
+    const dx = p.rig.position.x - car.position.x;
+    const dz = p.rig.position.z - car.position.z;
+    let animateThis = dx * dx + dz * dz < cullNearR2;
+    if (!animateThis) {
+      _cullSphere.center.copy(p.rig.position);
+      _cullSphere.radius = cullSphereR;
+      for (let k = 0; k < nf; k++) { if (_frustums[k].intersectsSphere(_cullSphere)) { animateThis = true; break; } }
+    }
+    if (animateThis) p.mixer.update(dt);
   }
 }
 
@@ -1442,88 +1561,102 @@ function updateSparks(dt) {
 }
 
 // ---------------------------------------------------------------------------
-// 교통(traffic) 차량(Toyota) — 트랙 전체에 N대를 흩뿌려 각자 주행
+// 교통(traffic) 차량 — 세 가지 모델(Genesis / Toyota / TU Racer)을 무작위로 채용
 // ---------------------------------------------------------------------------
-// Toyota 한 번만 로드해 메인 차량과 비슷한 크기로 정규화한 뒤, 같은 메쉬를 N개
-// 복제(geometry/material 공유 → 가벼움)한다. 각 대는 곡선 위 진행값(u)을 균등하게
-// 나눠 갖고, 주행선에서의 횡방향 오프셋은 차폭 w 기준 [-3w, 3w] 균등분포로 무작위
-// 결정해 한 줄로 늘어서지 않게 한다. 주행은 animate 루프에서 곡선을 따라 진행하며
-// 속도는 주인공 레이싱 카의 80%.
-function loadToyota(refSize, count) {
-  gltfLoader.load(
-    TOYOTA_URL,
-    (gltf) => {
-      const toy = gltf.scene;
-      toy.traverse((obj) => {
-        if (obj.isMesh) {
-          obj.castShadow = true;
-          obj.receiveShadow = true;
-        }
-      });
+// 세 모델을 각각 한 번씩 로드해 메인 차량과 비슷한 크기로 정규화한 뒤(프로토타입),
+// N대 각각이 세 프로토타입 중 하나를 무작위로 골라 복제(geometry/material 공유 →
+// 가벼움)한다. 각 대는 곡선 위 진행값(u)을 무작위 간격으로 나눠 갖고, 주행선
+// 횡오프셋도 무작위라 한 줄로 늘어서지 않는다. 주행은 animate 루프에서 곡선을
+// 따라 진행하며 속도는 주인공 대비 0.8~0.95.
 
-      // 메인 차량과 동일하게 +X 정면 정렬(회전 후 박스 계산)
-      toy.rotation.y = Math.PI;
-      toy.updateMatrixWorld(true);
+// 로드된 차량 씬을 +X 정면·바닥 안착·중심 정렬 + 메인 차량 덩치로 정규화.
+function prepareCarProto(root, refSize, scaleMul = 1) {
+  root.traverse((obj) => { if (obj.isMesh) { obj.castShadow = true; obj.receiveShadow = true; } });
+  root.rotation.y = Math.PI;               // +X 정면(메인 차량과 동일)
+  root.updateMatrixWorld(true);
+  // 크기 측정 → 메인 차량의 최대 치수에 맞춰 스케일(비슷한 덩치로). scaleMul 로 모델별 미세 보정.
+  let box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3());
+  const refMax = Math.max(refSize.x, refSize.y, refSize.z);
+  const myMax = Math.max(size.x, size.y, size.z) || 1;
+  root.scale.setScalar((refMax / myMax) * scaleMul);
+  root.updateMatrixWorld(true);
+  // 스케일 적용 후 재측정 → 바닥 안착(min.y=0)·XZ 중심 정렬 + 크기 산출
+  box = new THREE.Box3().setFromObject(root);
+  const center = box.getCenter(new THREE.Vector3());
+  const sizeScaled = box.getSize(new THREE.Vector3());
+  root.position.x -= center.x;
+  root.position.z -= center.z;
+  root.position.y -= box.min.y;
+  return { model: root, size: sizeScaled };
+}
 
-      // 크기 측정 → 메인 차량의 최대 치수에 맞춰 스케일(비슷한 덩치로)
-      let box = new THREE.Box3().setFromObject(toy);
-      const size = box.getSize(new THREE.Vector3());
-      const refMax = Math.max(refSize.x, refSize.y, refSize.z);
-      const toyMax = Math.max(size.x, size.y, size.z) || 1;
-      toy.scale.setScalar(refMax / toyMax);
-      toy.updateMatrixWorld(true);
+// genesisProto: { model, size } — 이미 주인공으로 로드·정규화된 Genesis(0번 옵션).
+// Toyota, TU Racer 를 추가로 로드해 정규화하고, 세 모델이 모두 준비되면 교통 배치.
+function loadTraffic(genesisProto, refSize, count) {
+  const protos = [genesisProto];           // [Genesis, Toyota, TU Racer]
+  let pending = 2;                          // 비동기 로드 대기 수(Toyota + TU Racer)
 
-      // 스케일 적용 후 재측정 → 바닥 안착(min.y=0)·XZ 중심 정렬 + 크기 산출
-      box = new THREE.Box3().setFromObject(toy);
-      const center = box.getCenter(new THREE.Vector3());
-      const sizeScaled = box.getSize(new THREE.Vector3()); // 스케일 반영된 크기
-      const w = sizeScaled.z;                              // 차폭(횡방향)
-      toy.position.x -= center.x;
-      toy.position.z -= center.z;
-      toy.position.y -= box.min.y;
+  const onReady = (optIdx, scaleMul = 1) => (gltf) => {
+    const proto = prepareCarProto(gltf.scene, refSize, scaleMul);
+    protos.push(proto);
+    carOptions[optIdx].model = proto.model.clone(); // 선택지(주인공)용 별도 클론
+    carOptions[optIdx].ready = true;
+    if (!game.started && selectedCar === optIdx) applyCarSelection(); // 기본 선택 반영
+    if (--pending === 0) spawnTraffic(protos, count);
+  };
+  const onErr = (name) => (err) => {
+    console.error(`[Traffic] ${name} 로드 실패:`, err);
+    if (--pending === 0) spawnTraffic(protos, count); // 일부 실패해도 남은 모델로 배치
+  };
 
-      // N대 복제 → 각자 리그(Group)에 담아 곡선 위에 배치.
-      // 곡선 위 시작 위치(u): 등간격 대신 무작위 간격(0.5~1.5배)을 누적·정규화해 다양하게.
-      const gaps = [];
-      let gapTotal = 0;
-      for (let i = 0; i < count; i++) { const g = 0.5 + Math.random(); gaps.push(g); gapTotal += g; }
-      const us = [];
-      let gapAcc = 0;
-      for (let i = 0; i < count; i++) { us.push(gapAcc / gapTotal); gapAcc += gaps[i]; }
-      // 리그가 곡선 위치·진행 방향 회전을 담당하고, 안쪽 clone 은 정규화 상태 유지.
-      for (let i = 0; i < count; i++) {
-        const rig = new THREE.Group();
-        rig.add(toy.clone());
-        // 조종석 시점 강조 마커(역삼각형) — 차마다 독립 머티리얼로 생성(근접 시 색/깜빡임 개별 제어)
-        const marker = buildCockpitMarker(sizeScaled);
-        rig.add(marker.group);          // 레이어로 메인 화면엔 숨김
-        scene.add(rig);
-        // 주행선 횡방향 오프셋: [-3w, 3w] 균등분포로 무작위 결정.
-        const lateral = (Math.random() * 2 - 1) * 3 * w;
-        traffic.push({
-          rig,
-          markerTri: marker.tri,               // 근접 시 노란색 깜빡임에 사용
-          u: us[i],                            // 곡선 위 무작위 간격 분포
-          speedRatio: TOYOTA_SPEED_MIN + Math.random() * (TOYOTA_SPEED_MAX - TOYOTA_SPEED_MIN), // 차마다 주인공 대비 0.8~1.1
-          lateral,                             // 기본 차선 오프셋(횡방향)
-          curLateral: lateral,                 // 현재 적용 오프셋(회피로 일시 변동)
-          ramp: 1,                             // 주행 속도 배율(재출발 시 0.1→1)
-          // 충돌 → 스핀 → 정지 → 복귀 상태머신
-          state: 'drive',                      // 'drive' | 'spin' | 'recover'
-          heading: 0,                          // 현재 진행 방향(rad)
-          omega: 0,                            // 스핀 각속도(rad/s)
-          slideSpeed: 0,                       // 스핀 중 미끄러짐 속도
-          slideDir: new THREE.Vector3(),       // 미끄러짐 방향(충돌 순간 고정)
-          recoverU: 0,                         // 복귀 목표 곡선 파라미터
-          recoverFrac: TRAFFIC_RECOVER_SPEED_FRAC, // 상대 차는 매우 느리게 복귀
-          cooldown: 0,                         // 재충돌 방지 잔여 시간(s)
-        });
-      }
-      console.log(`[Toyota] 교통 차량 ${count}대 배치 완료(속도 ${Math.round(TOYOTA_SPEED_MIN * 100)}~${Math.round(TOYOTA_SPEED_MAX * 100)}% 랜덤, 무작위 간격)`);
-    },
-    undefined,
-    (err) => console.error('[Toyota] 로드 실패:', err)
-  );
+  gltfLoader.load(TOYOTA_URL, onReady(1), undefined, onErr('Toyota'));
+  gltfLoader.load(TURACER_URL, onReady(2, 0.9), undefined, onErr('TU Racer')); // 조금 큰 편 → 0.9 로 축소
+}
+
+// 준비된 프로토타입들에서 무작위로 골라 N대를 트랙에 흩뿌린다.
+function spawnTraffic(protos, count) {
+  const usable = protos.filter(Boolean);
+  if (!usable.length) return;
+  // 곡선 위 시작 위치(u): 등간격 대신 무작위 간격(0.5~1.5배)을 누적·정규화해 다양하게.
+  const gaps = [];
+  let gapTotal = 0;
+  for (let i = 0; i < count; i++) { const g = 0.5 + Math.random(); gaps.push(g); gapTotal += g; }
+  const us = [];
+  let gapAcc = 0;
+  for (let i = 0; i < count; i++) { us.push(gapAcc / gapTotal); gapAcc += gaps[i]; }
+  // 리그가 곡선 위치·진행 방향 회전을 담당하고, 안쪽 clone 은 정규화 상태 유지.
+  for (let i = 0; i < count; i++) {
+    const proto = usable[Math.floor(Math.random() * usable.length)]; // 세 모델 무작위 채용
+    const w = proto.size.z;                // 차폭(횡방향, 모델마다 다름)
+    const rig = new THREE.Group();
+    rig.add(proto.model.clone());
+    // 조종석 시점 강조 마커(역삼각형) — 차마다 독립 머티리얼로 생성(근접 시 색/깜빡임 개별 제어)
+    const marker = buildCockpitMarker(proto.size);
+    rig.add(marker.group);                 // 레이어로 메인 화면엔 숨김
+    scene.add(rig);
+    // 주행선 횡방향 오프셋: [-3w, 3w] 균등분포로 무작위 결정.
+    const lateral = (Math.random() * 2 - 1) * 3 * w;
+    traffic.push({
+      rig,
+      markerTri: marker.tri,               // 근접 시 노란색 깜빡임에 사용
+      u: us[i],                            // 곡선 위 무작위 간격 분포
+      speedRatio: TOYOTA_SPEED_MIN + Math.random() * (TOYOTA_SPEED_MAX - TOYOTA_SPEED_MIN), // 차마다 주인공 대비 0.8~0.95
+      lateral,                             // 기본 차선 오프셋(횡방향)
+      curLateral: lateral,                 // 현재 적용 오프셋(회피로 일시 변동)
+      ramp: 1,                             // 주행 속도 배율(재출발 시 0.1→1)
+      // 충돌 → 스핀 → 정지 → 복귀 상태머신
+      state: 'drive',                      // 'drive' | 'spin' | 'recover'
+      heading: 0,                          // 현재 진행 방향(rad)
+      omega: 0,                            // 스핀 각속도(rad/s)
+      slideSpeed: 0,                       // 스핀 중 미끄러짐 속도
+      slideDir: new THREE.Vector3(),       // 미끄러짐 방향(충돌 순간 고정)
+      recoverU: 0,                         // 복귀 목표 곡선 파라미터
+      recoverFrac: TRAFFIC_RECOVER_SPEED_FRAC, // 상대 차는 매우 느리게 복귀
+      cooldown: 0,                         // 재충돌 방지 잔여 시간(s)
+    });
+  }
+  console.log(`[Traffic] 교통 차량 ${count}대 배치 완료(모델 ${usable.length}종 무작위)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1579,8 +1712,9 @@ gltfLoader.load(
     // 나무를 트랙 안팎에 자연스럽게 흩뿌림(주행로는 비워 둠)
     loadTrees(roadHalfWidth, trackRadius);
 
-    // 교통 차량(Toyota) N대를 트랙 전체에 흩뿌려 각자 주행시킴
-    loadToyota(size, TOYOTA_COUNT);
+    // 교통 차량 N대를 트랙 전체에 흩뿌려 각자 주행시킴(Genesis/Toyota/TU Racer 무작위).
+    // 이미 정규화된 Genesis(주인공)를 프로토타입으로 함께 넘긴다.
+    loadTraffic({ model, size }, size, TOYOTA_COUNT);
 
     // 사람(걷기/뛰기)을 트랙 곡선을 따라 도로변에 배치해 트랙 주변을 돌게 함
     loadPeople(size, roadHalfWidth);
@@ -1659,6 +1793,10 @@ gltfLoader.load(
     headlightFlashDist = maxDim * 10; // 이 거리 안으로 앞차를 따라잡으면 섬광
     markerNearDist = maxDim * 8;      // 이 거리 안의 상대 차는 마커가 노랑으로 깜빡임
 
+    // 사람 애니메이션 컬링 반경(차 크기 비례)
+    cullSphereR = maxDim;             // 사람 1인 절두체 판정용 바운딩 반경(여유 포함)
+    cullNearR2 = (maxDim * 10) ** 2;  // 차 주변 10 차길이 안은 항상 애니메이션
+
     // 카메라 상하 진동 진폭(차 크기에 비례) — 높이 60% 수준에 맞춰 축소
     camFollow.bobAmp = maxDim * 0.78;
     // 추격 거리: 차 길이(size.x) 기준 고정. 모바일은 조금 더 멀리(4배)서 관찰.
@@ -1708,24 +1846,13 @@ gltfLoader.load(
     showcaseGroup.rotation.x = SHOWCASE_TILT;                     // 약간 기울임
     showcaseSpinner = new THREE.Group();
     showcaseGroup.add(showcaseSpinner);
-    const showClone = model.clone();
-    showClone.traverse((o) => {
-      o.layers.set(SHOWCASE_LAYER); // 전용 레이어(정지/게임오버 때만 렌더)
-      if (o.isMesh) {
-        o.castShadow = false;
-        o.receiveShadow = false;
-        // 머티리얼 복제(원본 차량과 공유 방지) + 톤매핑 제외 →
-        // 어두운 노출(PAUSE_DARK_EXPOSURE)의 영향을 안 받아 모델만 밝게 보인다.
-        if (Array.isArray(o.material)) {
-          o.material = o.material.map((m) => { const c = m.clone(); c.toneMapped = false; return c; });
-        } else {
-          o.material = o.material.clone();
-          o.material.toneMapped = false;
-        }
-      }
-    });
-    showcaseSpinner.add(showClone);
     camera.add(showcaseGroup);
+
+    // Genesis Magma 를 0번 선택지로 등록(이미 car 리그에 추가됨) + 전시 클론 생성.
+    heroModel = model;
+    carOptions[0].model = model;
+    carOptions[0].ready = true;
+    setShowcaseModel(model);    // 전시 스피너에 회전 클론 추가
     // 전시 모델도 조명을 받도록 주광·반구광에 전용 레이어 추가
     sun.layers.enable(SHOWCASE_LAYER);
     hemi.layers.enable(SHOWCASE_LAYER);
@@ -1739,9 +1866,12 @@ gltfLoader.load(
     loaderEl.classList.add('hidden');
     setTimeout(() => loaderEl.remove(), 500);
 
-    // 로딩 완료 → 첫 화면(타이틀) 노출. 이때 차량은 전시 모드로 중앙에서 회전한다.
+    // 로딩 완료 → 인트로 일러스트 스플래시 노출. 그 뒤로 타이틀 화면을 준비해 둔다.
+    if (carSubEl) carSubEl.textContent = carOptions[selectedCar].sub; // 선택 차량 부제 초기화
     const titleEl = document.getElementById('title');
     if (titleEl) titleEl.classList.remove('hidden');
+    const introEl = document.getElementById('intro');
+    if (introEl) introEl.classList.remove('hidden');
   },
   (xhr) => {
     if (xhr.lengthComputable) {
@@ -1855,16 +1985,25 @@ function drawTrackmap() {
 // ---------------------------------------------------------------------------
 // 점수 / 게임오버
 // ---------------------------------------------------------------------------
-const game = { score: 0, sec: 0, diamonds: MAX_DIAMONDS, best: 0, over: false, paused: false, autoPaused: false, started: false, grace: 0, countdown: 0, cdShown: 0, pendingOver: false };
+const game = { score: 0, sec: 0, diamonds: MAX_DIAMONDS, best: 0, over: false, paused: false, autoPaused: false, frozen: false, started: false, grace: 0, countdown: 0, cdShown: 0, pendingOver: false };
 const scoreValEl = document.getElementById('score-val');
 const bestValEl = document.getElementById('best-val');
 const diamondsEl = document.getElementById('diamonds');
 const gameoverEl = document.getElementById('gameover');
-const gameoverScoreEl = document.querySelector('#gameover .go-score span');
-const restartBtn = document.getElementById('restart-btn');
+const gameoverScoreEl = document.querySelector('#gameover-score span');
 const pauseBtn = document.getElementById('pause-btn');
-if (restartBtn) restartBtn.addEventListener('click', () => location.reload()); // 처음부터 다시
+const pauseScreenEl = document.getElementById('pausescreen');
+// 게임오버 일러스트를 클릭/터치하거나 스페이스를 누르면 처음부터 다시 시작
+function restartGame() { location.reload(); }
+if (gameoverEl) gameoverEl.addEventListener('click', () => { if (game.over) restartGame(); });
+window.addEventListener('keydown', (e) => {
+  if (game.over && (e.key === ' ' || e.code === 'Space')) { e.preventDefault(); restartGame(); }
+});
 if (pauseBtn) pauseBtn.addEventListener('click', togglePause);
+// 일시정지 일러스트를 클릭/터치하면 게임으로 복귀(카운트다운 후 출발)
+if (pauseScreenEl) pauseScreenEl.addEventListener('click', () => {
+  if (game.paused && !game.autoPaused) togglePause();
+});
 updateDiamonds();
 
 // 게임 시작/재개 시 화면 중앙에 3-2-1 카운트다운을 띄운다.
@@ -1885,12 +2024,26 @@ function beginCountdown() {
 }
 
 // 첫 화면(타이틀) / 사용법(HOW TO) — START 누르기 전까지 게임은 멈춰 있고 차량만 회전
+// 인트로 스플래시: 아무 곳이나 클릭/탭하면 일러스트를 닫고 타이틀 화면이 드러난다.
+const introScreenEl = document.getElementById('intro');
+if (introScreenEl) {
+  introScreenEl.addEventListener('click', () => {
+    introScreenEl.classList.add('hidden');
+    setTimeout(() => introScreenEl.remove(), 500); // 페이드 아웃 후 DOM 정리
+  });
+}
+
 const titleScreenEl = document.getElementById('title');
 const howtoScreenEl = document.getElementById('howto');
 const startBtn = document.getElementById('start-btn');
 const howtoBtn = document.getElementById('howto-btn');
 const howtoBackBtn = document.getElementById('howto-back');
 if (startBtn) startBtn.addEventListener('click', startGame);
+// 차량 선택 좌우 화살표(가운데 회전 차량 교체)
+const carPrevBtn = document.getElementById('car-prev');
+const carNextBtn = document.getElementById('car-next');
+if (carPrevBtn) carPrevBtn.addEventListener('click', () => cycleCar(-1));
+if (carNextBtn) carNextBtn.addEventListener('click', () => cycleCar(1));
 if (howtoBtn) howtoBtn.addEventListener('click', () => howtoScreenEl && howtoScreenEl.classList.remove('hidden'));
 if (howtoBackBtn) howtoBackBtn.addEventListener('click', () => howtoScreenEl && howtoScreenEl.classList.add('hidden')); // 첫 화면으로
 // START: 타이틀을 닫고 HUD 를 켜며 시뮬레이션을 시작
@@ -2013,7 +2166,10 @@ function togglePause() {
   if (game.paused) {
     const ctx = getAudioCtx();
     if (ctx) ctx.suspend(); // 즉시 무음(엔진/효과음·배경음악은 syncAudio 가 함께 정지)
+    // 수동 일시정지에서만 타이틀 일러스트 복귀 화면을 띄운다(자동 정지는 화면을 그대로 멈춤).
+    if (!game.autoPaused && pauseScreenEl) pauseScreenEl.classList.remove('hidden');
   } else {
+    if (pauseScreenEl) pauseScreenEl.classList.add('hidden'); // 복귀 → 일러스트 숨김(카운트다운 노출)
     game.autoPaused = false;  // 재개 시 자동정지 플래그 해제
     beginCountdown();        // 재개도 3-2-1 후 출발
     // iOS: AudioContext.resume() 은 반드시 사용자 제스처(이 클릭) 안에서 호출해야 한다.
@@ -2025,11 +2181,28 @@ function togglePause() {
 // 창이 포커스를 잃거나(blur) 탭이 가려지면(다른 앱/탭 전환) 자동 일시정지.
 // 자동 정지(autoPaused)는 전시(쇼케이스) 모델을 띄우지 않고, 포커스를 되찾으면 자동 재개한다.
 function pauseOnFocusLost() {
-  if (game.started && !game.over && !game.paused && game.countdown <= 0) {
+  if (game.started && !game.over && !game.paused && !game.frozen && game.countdown <= 0) {
     game.autoPaused = true;   // 쇼케이스 억제 + 포커스 복귀 시 자동 재개 표시
     togglePause();
   }
 }
+// F 키: 현재 장면을 그대로 정지(freeze) ↔ 해동(thaw). 일시정지(일러스트/카운트다운)와 달리
+// 화면을 그 상태로 얼리고(dt=0), 다시 누르면 카운트다운 없이 즉시 이어서 진행한다.
+function toggleFreeze() {
+  const ctx = getAudioCtx();
+  if (game.frozen) {                 // 해동: 즉시 재개
+    game.frozen = false;
+    if (ctx) ctx.resume();           // 사용자 제스처(F) 안에서 오디오 재개
+    return;
+  }
+  // 새로 얼리는 건 실제 주행 중일 때만(시작 전·정지·게임오버·카운트다운 중엔 무시)
+  if (!game.started || game.over || game.paused || game.countdown > 0) return;
+  game.frozen = true;
+  if (ctx) ctx.suspend();            // 즉시 무음
+}
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleFreeze(); }
+});
 // 포커스를 되찾으면(자동 정지 상태일 때만) 3-2-1 카운트다운 후 자동 재개.
 function resumeOnFocusGain() {
   if (game.autoPaused && game.paused && !game.over && game.countdown <= 0) togglePause();
@@ -2053,7 +2226,8 @@ function gameOver() {
 const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
-  const dt = clock.getDelta();
+  let dt = clock.getDelta();
+  if (game.frozen) dt = 0; // F 정지: dt=0 으로 모든 갱신을 멈춰 장면을 그대로 얼린다(렌더는 계속).
 
   syncAudio(); // 게임 중에만 사운드 ON, 그 외엔 OFF 강제
 
@@ -2324,7 +2498,10 @@ function animate() {
     checkCollisions();
   }
 
-  if (!game.paused) { updateSparks(dt); updatePeople(dt); } // 충돌 스파크 + 사람(걷기/뛰기) 갱신
+  // 충돌 스파크 + 사람(걷기/뛰기) 갱신. 사람은 실제 렌더되는 카메라(체이스/조종석) 시야
+  // 밖이면서 먼 경우 스켈레톤 갱신을 건너뛴다(직전 프레임 카메라 행렬 기준 — 1프레임 지연 무시 가능).
+  _peopleCams[0] = camera; _peopleCams[1] = miniCam;
+  if (!game.paused) { updateSparks(dt); updatePeople(dt, _peopleCams); }
 
   // 주행 중에는 마우스 드래그를 조향에 쓰므로 궤도 회전을 끈다(타이틀/정지/게임오버에선 궤도 허용).
   controls.enableRotate = !steerActive();
@@ -2391,8 +2568,9 @@ function animate() {
   if (game.started) drawTrackmap();
 
   // 스왑 여부: 조종석을 전체화면으로 띄울지(전시 화면 중에는 무시).
-  // 자동 정지(포커스 상실)에서는 전시 모델을 띄우지 않는다 — 화면을 그대로 멈춘다.
-  const showcasing = (!game.started || (game.paused && !game.autoPaused) || game.over) && showcaseGroup;
+  // 전시(회전 모델)는 차량 선택 타이틀 화면에서만 띄운다.
+  // 수동 일시정지·게임오버는 일러스트 DOM 화면이 대신하므로 전시 모델을 쓰지 않는다.
+  const showcasing = !game.started && showcaseGroup;
   const swapped = cockpitMain && cockpitReady && !showcasing;
   const w = window.innerWidth, h = window.innerHeight;
   const fullAspect = w / h, smallAspect = MINIMAP_W / MINIMAP_H;

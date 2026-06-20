@@ -13,3 +13,7 @@ Thumbs.db
 # 임시
 *.log
 .cache/
+
+# 원본(비압축) 모델 — 압축본(*.opt.glb)만 커밋
+meshes/*.glb
+!meshes/*.opt.glb
