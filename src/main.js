@@ -415,6 +415,7 @@ function triggerBoost() {
   drive.boost = BOOST_FACTOR;                             // 순식간에 1.2배(누적 없이 고정)
   addScore(100);                                         // 부스터 키를 누를 때마다 +100
   popText('+100', window.innerWidth / 2, window.innerHeight * 0.4, '#59c6ff', 32);
+  drainEnergy(5); // 부스터는 에너지 5% 소모(0 되면 다이아 1개 차감 후 재충전)
 }
 window.addEventListener('keydown', (e) => {
   if (e.key === ' ' || e.code === 'Space') {
@@ -474,6 +475,24 @@ function endMouseSteer() {
 window.addEventListener('pointerup', endMouseSteer);
 window.addEventListener('pointercancel', endMouseSteer);
 
+// 탭 핸들러 등록(iOS 신뢰성). 터치에서는 click 이 손가락 미세 이동/제스처 판정으로 자주
+// 누락되므로, 탭 대상은 pointer 이벤트로 직접 처리한다(이동 허용오차 12px 안이면 탭으로 간주).
+// 마우스는 기존 click 그대로. 중복 실행 방지: 터치는 pointerup 에서만, 마우스는 click 에서만 발동.
+function onTap(el, fn) {
+  if (!el) return;
+  let sx = 0, sy = 0, moved = false, touch = false;
+  el.addEventListener('pointerdown', (e) => {
+    sx = e.clientX; sy = e.clientY; moved = false; touch = e.pointerType !== 'mouse';
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (Math.abs(e.clientX - sx) > 12 || Math.abs(e.clientY - sy) > 12) moved = true;
+  });
+  el.addEventListener('pointerup', (e) => {
+    if (touch && !moved) { e.preventDefault(); fn(e); } // 터치 탭 → 즉시 처리(click 누락 회피)
+  });
+  el.addEventListener('click', (e) => { if (!touch) fn(e); }); // 마우스 클릭만 여기서 처리
+}
+
 // ---------------------------------------------------------------------------
 // 충돌 사운드(Web Audio API 로 합성 — 오디오 파일 불필요)
 // ---------------------------------------------------------------------------
@@ -499,21 +518,29 @@ function resumeAudio() {
 window.addEventListener('pointerdown', resumeAudio);
 window.addEventListener('keydown', resumeAudio);
 
-// 배경 음악(TUGameSong.mp3) — 게임 플레이 중에만 재생
+// 배경 음악(TUGameSong.mp3) — START 이후엔 끊지 않고 계속 재생
 const bgmEl = document.getElementById('bgm');
 if (bgmEl) bgmEl.volume = 0.22; // 엔진음·충돌음(효과음)을 가리지 않게 낮게
 
-// 사운드 상태 강제 일치(매 프레임 호출): 게임 진행 중에만 ON, 그 외(시작 전·정지·게임오버)엔 OFF.
+// 선택 가능한 배경음악 목록. 여기에 { name, url } 을 추가하면 음표 메뉴에 자동으로 노출된다.
+const SONGS = [
+  { name: '멈추지 않아', url: './TUNoStop.mp3' },      // 기본곡
+  { name: '질주하는 TU GAME', url: './TUGameSong.mp3' },
+  // 예) { name: '새 곡 제목', url: './NewSong.mp3' },
+];
+let selectedSong = 0;                 // SONGS 인덱스(기본: 멈추지 않아)
+let bgmEnabled = true;                // false = '배경음악 사용 안 함'
+let loadedSongUrl = SONGS[0].url;     // 현재 <audio> 에 로드된 곡 url(중복 교체 방지)
+
+// 사운드 상태 강제 일치(매 프레임 호출). 엔진/효과음은 진행 중에만 ON, 배경 음악은 START 이후 항상 ON.
 function syncAudio() {
-  // 배경 음악은 진행 중(카운트다운 포함) 재생. 엔진/효과음 컨텍스트는 진행 중엔 켜 두고,
-  // 엔진음 자체는 카운트다운이 끝난 실제 주행 중에만(게인으로 차단 — iOS resume 제스처 문제 회피).
+  // 엔진/효과음 컨텍스트는 진행 중엔 켜 두고, 엔진음 자체는 카운트다운이 끝난 실제 주행 중에만
+  // (게인으로 차단 — iOS resume 제스처 문제 회피). 배경 음악은 <audio> 요소라 컨텍스트와 무관.
   const playing = game.started && !game.paused && !game.over && !game.frozen;
   const engineOn = playing && game.countdown <= 0;
-  // 배경 음악: 진행 중이면 재생, 그 외엔 일시정지
-  if (bgmEl) {
-    if (playing) { if (bgmEl.paused) bgmEl.play().catch(() => {}); }
-    else if (!bgmEl.paused) bgmEl.pause();
-  }
+  // 배경 음악: 한 번 시작(START)되면 일시정지·정지(F)·게임오버에서도 멈추지 않고 계속 재생한다.
+  // 단, 음표 메뉴에서 '사용 안 함'(bgmEnabled=false)을 고르면 재생하지 않는다.
+  if (bgmEl && bgmEnabled && game.started && bgmEl.paused) bgmEl.play().catch(() => {});
   if (!audioCtx) return; // 아직 컨텍스트 생성 전이면(엔진/효과음) 소리 없음(=OFF)
   if (playing) {
     // 컨텍스트는 진행 중 항상 running 유지(카운트다운 동안에도). resume 은 비제스처라 iOS 에선
@@ -607,6 +634,41 @@ function playCrashSound() {
   playImpact(ctx, t0,        1.0, 110, 0.5);  // 1타: 가장 강하고 높음
   playImpact(ctx, t0 + 0.18, 0.72, 92, 0.45); // 2타
   playImpact(ctx, t0 + 0.34, 0.5,  80, 0.42); // 3타: 가장 약하고 낮음
+}
+
+// 아이템 획득 효과음: 상승하는 음들. 다이아는 짧고 맑은 3음, 에너지는 길게 상승하는 5음(~0.8초).
+function playPickupSound(type) {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume();
+  const now = ctx.currentTime;
+  if (type === 'energy') {
+    const base = 520;
+    const notes = [base, base * 1.2, base * 1.5, base * 1.8, base * 2.2];
+    const step = 0.13, dur = 0.28; // 길게(마지막 음 ~0.52s 시작 + 0.28s → 총 ~0.8s)
+    notes.forEach((f, i) => {
+      const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = f;
+      const g = ctx.createGain();
+      const t0 = now + i * step;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.15, t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t0); o.stop(t0 + dur + 0.02);
+    });
+  } else { // diamond
+    const base = 880;
+    [base, base * 1.25, base * 1.5].forEach((f, i) => {
+      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
+      const g = ctx.createGain();
+      const t0 = now + i * 0.07;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.16, t0 + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t0); o.stop(t0 + 0.18);
+    });
+  }
 }
 
 // 브레이크등(감속 시 후면 적색 발광)
@@ -1660,6 +1722,122 @@ function spawnTraffic(protos, count) {
 }
 
 // ---------------------------------------------------------------------------
+// 게임 아이템(에너지/다이아몬드) — 트랙 위에 생성되어 천천히 이동, 주행 차량이 지나가면 획득
+// ---------------------------------------------------------------------------
+// 에너지=게이지 100%, 다이아몬드=생명 +1. 정지하면 너무 빨리 지나치므로 주인공 최고
+// 속도의 50%로 곡선을 따라 이동한다. 생성은 '바퀴'에 비례: 다이아 1바퀴당 1개, 에너지
+// 1바퀴당 2개. 획득 시 크게 확대→HUD 로 날아가 적용.
+const items = []; // { type, mesh, u, lateral, bobT, spin } — 트랙에 한 번에 하나만 존재
+let itemSpeed = 0, itemCollectDist = 0, itemFloatY = 0;
+let lapProgress = 0;                 // 차가 실제로 돈 바퀴 수(누적)
+let energyMark = 0, diamondMark = 0; // 다음 생성 기준(에너지·다이아 각각 1바퀴마다 1개)
+const itemTemplates = {};            // type -> { geo, mat } (모든 인스턴스가 공유)
+const _proj = new THREE.Vector3();
+
+function initItems(maxDim) {
+  itemSpeed = drive.maxSpeed * 0.5;            // 주인공 최고 속도의 50%
+  itemCollectDist = maxDim * 1.15;             // 획득 판정 거리
+  itemFloatY = maxDim * 0.32;                  // 떠 있는 높이(도로에 가깝게 낮춤)
+  const r = maxDim * 0.35;
+  // 에너지: 번개(⚡) 모양 — 2D 윤곽을 살짝 돌출(extrude)시켜 입체 번개로.
+  const f = r * 0.9;
+  const boltPts = [[0.125, 1.0], [-0.625, -0.167], [-0.042, -0.167], [-0.375, -1.0], [0.625, 0.25], [0.042, 0.25]];
+  const boltShape = new THREE.Shape();
+  boltShape.moveTo(boltPts[0][0] * f, boltPts[0][1] * f);
+  for (let i = 1; i < boltPts.length; i++) boltShape.lineTo(boltPts[i][0] * f, boltPts[i][1] * f);
+  boltShape.closePath();
+  const boltGeo = new THREE.ExtrudeGeometry(boltShape, { depth: f * 0.3, bevelEnabled: false });
+  boltGeo.center();
+  itemTemplates.energy = { geo: boltGeo, mat: new THREE.MeshStandardMaterial({ color: 0x2bff7a, emissive: 0x2bff6a, emissiveIntensity: 0.95, metalness: 0.3, roughness: 0.4 }) };
+  const diaGeo = new THREE.OctahedronGeometry(r, 0); diaGeo.scale(0.8, 1.3, 0.8);
+  itemTemplates.diamond = { geo: diaGeo, mat: new THREE.MeshStandardMaterial({ color: 0x5fd0ff, emissive: 0x2aa8ff, emissiveIntensity: 0.85, metalness: 0.6, roughness: 0.2 }) };
+}
+function clearItemsOfType(type) {                                  // 같은 종류만 제거(에너지/다이아 독립 관리)
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i].type === type) { scene.remove(items[i].mesh); items.splice(i, 1); }
+  }
+}
+function spawnItem(type) {
+  if (!drive.curve || !itemTemplates[type]) return;
+  clearItemsOfType(type);                                         // 같은 종류의 이전 아이템만 사라짐(다른 종류는 유지)
+  const t = itemTemplates[type];
+  const mesh = new THREE.Mesh(t.geo, t.mat);                       // geometry/material 공유(가벼움)
+  const u = (drive.u + 0.05 + Math.random() * 0.28) % 1;          // 차 앞쪽 어딘가
+  const lateral = (Math.random() * 2 - 1) * drive.lateralMax * 0.8; // 조향으로 닿는 범위
+  scene.add(mesh);
+  items.push({ type, mesh, u, lateral, bobT: Math.random() * 6.28, spin: 0 });
+}
+function updateItems(dt) {
+  if (!drive.curve) return;
+  // 차가 실제로 전진한 만큼 바퀴 진행도를 누적 → 다이아 1바퀴/1개, 에너지 1바퀴/2개 생성
+  const v = drive.state === 'drive' ? drive.speed * drive.boost : 0;
+  lapProgress += (v * dt) / drive.length;
+  while (lapProgress >= diamondMark + 1) { diamondMark += 1; spawnItem('diamond'); }
+  while (lapProgress >= energyMark + 1) { energyMark += 1; spawnItem('energy'); } // 1바퀴당 1개(이전 2개의 1/2)
+
+  const du = (itemSpeed * dt) / drive.length;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    it.u = (it.u + du) % 1;                     // 곡선 따라 전진(차와 같은 방향, 절반 속도)
+    drive.curve.getPointAt(it.u, _pos);
+    drive.curve.getTangentAt(it.u, _tan);
+    _lat.crossVectors(_up, _tan).normalize();
+    it.bobT += dt * 3; it.spin += dt * 2.4;
+    const y = itemFloatY + Math.sin(it.bobT) * (itemFloatY * 0.18);
+    it.mesh.position.set(_pos.x + _lat.x * it.lateral, y, _pos.z + _lat.z * it.lateral);
+    it.mesh.rotation.y = it.spin;
+    const dx = it.mesh.position.x - car.position.x;
+    const dz = it.mesh.position.z - car.position.z;
+    if (dx * dx + dz * dz < itemCollectDist * itemCollectDist) { // 주인공이 지나감 → 획득
+      collectItem(it);
+      scene.remove(it.mesh);
+      items.splice(i, 1);
+    }
+  }
+}
+// 메인 전체화면 카메라로 3D 위치를 화면 좌표로 투영(뒤쪽이면 화면 하단 중앙으로 대체).
+function projectToScreen(pos) {
+  const cam = (cockpitMain && miniCam) ? miniCam : camera;
+  _proj.copy(pos).project(cam);
+  if (_proj.z > 1) return { x: window.innerWidth / 2, y: window.innerHeight * 0.75 };
+  return { x: (_proj.x * 0.5 + 0.5) * window.innerWidth, y: (-_proj.y * 0.5 + 0.5) * window.innerHeight };
+}
+function elCenter(el) { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
+function collectItem(it) {
+  playPickupSound(it.type);                    // 획득 효과음
+  const s = projectToScreen(it.mesh.position);
+  collectFly(it.type, s.x, s.y);
+}
+// 획득 연출: 제자리에서 크게 확대 → 해당 HUD 로 날아간 뒤 효과 적용.
+function collectFly(type, sx, sy) {
+  const el = document.createElement('div');
+  el.className = 'item-fly';
+  el.textContent = type === 'energy' ? '⚡' : '◆';
+  el.style.color = type === 'energy' ? '#36ff86' : '#5fd0ff';
+  el.style.left = sx + 'px';
+  el.style.top = sy + 'px';
+  document.body.appendChild(el);
+  const grow = el.animate([
+    { transform: 'translate(-50%,-50%) scale(0.4)', opacity: 0 },
+    { transform: 'translate(-50%,-50%) scale(2.8)', opacity: 1 },
+  ], { duration: 280, easing: 'cubic-bezier(0.2,1.3,0.3,1)', fill: 'forwards' });
+  grow.onfinish = () => {
+    const targetEl = type === 'energy' ? energyEl : diamondsEl;
+    const tgt = targetEl ? elCenter(targetEl) : { x: sx, y: sy - 100 };
+    const dx = tgt.x - sx, dy = tgt.y - sy;
+    const fly = el.animate([
+      { transform: 'translate(-50%,-50%) scale(2.8)', opacity: 1 },
+      { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(0.6)`, opacity: 0.85 },
+    ], { duration: 600, easing: 'cubic-bezier(0.5,0,0.35,1)', fill: 'forwards' });
+    fly.onfinish = () => { el.remove(); applyItemEffect(type); };
+  };
+}
+function applyItemEffect(type) {
+  if (type === 'energy') { game.energy = 100; updateEnergy(); }        // 에너지 → 게이지 100%
+  else { game.diamonds = Math.min(MAX_DIAMONDS, game.diamonds + 1); updateDiamonds(); } // 다이아 → 생명 +1
+}
+
+// ---------------------------------------------------------------------------
 // 모델 로딩
 // ---------------------------------------------------------------------------
 const loaderEl = document.getElementById('loader');
@@ -1740,6 +1918,7 @@ gltfLoader.load(
     avoidRadius = maxDim * 4.0;
     avoidClearance = maxDim * 1.2; // collisionDist 보다 크게 → 확실히 비켜감
     initSparks(maxDim, size);      // 충돌 스파크 파티클 준비
+    initItems(maxDim);             // 게임 아이템(코인/에너지/다이아몬드) 준비
 
     // 후면 브레이크등(차 로컬 -X = 뒤). 좌/우 2개 + 적색 글로우 라이트.
     brakeMaterial = new THREE.MeshStandardMaterial({
@@ -1978,6 +2157,33 @@ function drawTrackmap() {
   };
   // 다른 차(교통)=빨간 점
   for (const t of traffic) dot(t.rig.position.x, t.rig.position.z, '#ff3b30', 3);
+  // 게임 아이템: 다른 점(차 3~4px)보다 크게 표시 — 다이아=청록 마름모, 에너지=초록 번개
+  for (const it of items) {
+    const [px, py] = trackmapMap(it.mesh.position.x, it.mesh.position.z);
+    if (it.type === 'diamond') {
+      trackmapCtx.save();
+      trackmapCtx.translate(px, py);
+      trackmapCtx.rotate(Math.PI / 4);          // 정사각형을 45° 돌려 마름모(◆)
+      trackmapCtx.fillStyle = '#5fd0ff';
+      trackmapCtx.fillRect(-5, -5, 10, 10);
+      trackmapCtx.restore();
+    } else { // energy = 번개 모양(깜빡임)
+      trackmapCtx.save();
+      trackmapCtx.globalAlpha = Math.sin(markerBlinkT * 16) > 0 ? 1 : 0.18; // ≈2.5Hz 점멸
+      trackmapCtx.translate(px, py);
+      trackmapCtx.fillStyle = '#36ff86';
+      trackmapCtx.beginPath();
+      const s = 8; // 번개 크기(다른 점보다 크게)
+      for (let i = 0; i < 6; i++) {
+        const x = [0.125, -0.625, -0.042, -0.375, 0.625, 0.042][i] * s;
+        const y = -[1.0, -0.167, -0.167, -1.0, 0.25, 0.25][i] * s; // 캔버스 y는 아래로 +
+        if (i === 0) trackmapCtx.moveTo(x, y); else trackmapCtx.lineTo(x, y);
+      }
+      trackmapCtx.closePath();
+      trackmapCtx.fill();
+      trackmapCtx.restore();
+    }
+  }
   // 주인공=노란 점(맨 위에)
   dot(car.position.x, car.position.z, '#ffd400', 4);
 }
@@ -1985,7 +2191,7 @@ function drawTrackmap() {
 // ---------------------------------------------------------------------------
 // 점수 / 게임오버
 // ---------------------------------------------------------------------------
-const game = { score: 0, sec: 0, diamonds: MAX_DIAMONDS, best: 0, over: false, paused: false, autoPaused: false, frozen: false, started: false, grace: 0, countdown: 0, cdShown: 0, pendingOver: false };
+const game = { score: 0, sec: 0, diamonds: MAX_DIAMONDS, energy: 100, best: 0, over: false, paused: false, autoPaused: false, frozen: false, started: false, grace: 0, countdown: 0, cdShown: 0, pendingOver: false };
 const scoreValEl = document.getElementById('score-val');
 const bestValEl = document.getElementById('best-val');
 const diamondsEl = document.getElementById('diamonds');
@@ -1995,15 +2201,13 @@ const pauseBtn = document.getElementById('pause-btn');
 const pauseScreenEl = document.getElementById('pausescreen');
 // 게임오버 일러스트를 클릭/터치하거나 스페이스를 누르면 처음부터 다시 시작
 function restartGame() { location.reload(); }
-if (gameoverEl) gameoverEl.addEventListener('click', () => { if (game.over) restartGame(); });
+onTap(gameoverEl, (e) => { if (isMusicTap(e)) return; if (game.over) restartGame(); });
 window.addEventListener('keydown', (e) => {
   if (game.over && (e.key === ' ' || e.code === 'Space')) { e.preventDefault(); restartGame(); }
 });
-if (pauseBtn) pauseBtn.addEventListener('click', togglePause);
+onTap(pauseBtn, togglePause);
 // 일시정지 일러스트를 클릭/터치하면 게임으로 복귀(카운트다운 후 출발)
-if (pauseScreenEl) pauseScreenEl.addEventListener('click', () => {
-  if (game.paused && !game.autoPaused) togglePause();
-});
+onTap(pauseScreenEl, (e) => { if (isMusicTap(e)) return; if (game.paused && !game.autoPaused) togglePause(); });
 updateDiamonds();
 
 // 게임 시작/재개 시 화면 중앙에 3-2-1 카운트다운을 띄운다.
@@ -2026,26 +2230,25 @@ function beginCountdown() {
 // 첫 화면(타이틀) / 사용법(HOW TO) — START 누르기 전까지 게임은 멈춰 있고 차량만 회전
 // 인트로 스플래시: 아무 곳이나 클릭/탭하면 일러스트를 닫고 타이틀 화면이 드러난다.
 const introScreenEl = document.getElementById('intro');
-if (introScreenEl) {
-  introScreenEl.addEventListener('click', () => {
-    introScreenEl.classList.add('hidden');
-    setTimeout(() => introScreenEl.remove(), 500); // 페이드 아웃 후 DOM 정리
-  });
-}
+onTap(introScreenEl, (e) => {
+  if (isMusicTap(e)) return; // 음표 버튼/메뉴 탭은 인트로를 닫지 않음
+  introScreenEl.classList.add('hidden');
+  setTimeout(() => introScreenEl.remove(), 500); // 페이드 아웃 후 DOM 정리
+});
 
 const titleScreenEl = document.getElementById('title');
 const howtoScreenEl = document.getElementById('howto');
 const startBtn = document.getElementById('start-btn');
 const howtoBtn = document.getElementById('howto-btn');
 const howtoBackBtn = document.getElementById('howto-back');
-if (startBtn) startBtn.addEventListener('click', startGame);
+onTap(startBtn, startGame);
 // 차량 선택 좌우 화살표(가운데 회전 차량 교체)
 const carPrevBtn = document.getElementById('car-prev');
 const carNextBtn = document.getElementById('car-next');
-if (carPrevBtn) carPrevBtn.addEventListener('click', () => cycleCar(-1));
-if (carNextBtn) carNextBtn.addEventListener('click', () => cycleCar(1));
-if (howtoBtn) howtoBtn.addEventListener('click', () => howtoScreenEl && howtoScreenEl.classList.remove('hidden'));
-if (howtoBackBtn) howtoBackBtn.addEventListener('click', () => howtoScreenEl && howtoScreenEl.classList.add('hidden')); // 첫 화면으로
+onTap(carPrevBtn, () => cycleCar(-1));
+onTap(carNextBtn, () => cycleCar(1));
+onTap(howtoBtn, () => howtoScreenEl && howtoScreenEl.classList.remove('hidden'));
+onTap(howtoBackBtn, () => howtoScreenEl && howtoScreenEl.classList.add('hidden')); // 첫 화면으로
 // START: 타이틀을 닫고 HUD 를 켜며 시뮬레이션을 시작
 function startGame() {
   if (game.started) return;
@@ -2056,8 +2259,82 @@ function startGame() {
   drive.active = true;                            // 주행 시뮬레이션 활성(카운트다운 동안엔 정지)
   beginCountdown();                                // 즉시 출발이 아니라 3-2-1 카운트다운 후 시작(grace 는 0 도달 시 부여)
   resumeAudio();                                  // 사용자 제스처 → 오디오/엔진음 시작
-  if (bgmEl) bgmEl.play().catch(() => {});         // 사용자 제스처 안에서 배경음악 재생 시작(자동재생 정책)
+  if (bgmEnabled && bgmEl) bgmEl.play().catch(() => {}); // 사용자 제스처 안에서 배경음악 재생 시작(자동재생 정책)
 }
+
+// ---------------------------------------------------------------------------
+// 배경음악 선택 메뉴(음표 버튼)
+// ---------------------------------------------------------------------------
+const musicBtn = document.getElementById('music-btn');
+const musicMenu = document.getElementById('music-menu');
+const musicListEl = document.getElementById('music-list');
+// SONGS + '사용 안 함' 으로 목록을 그린다(현재 선택 항목은 active 강조).
+function buildMusicMenu() {
+  if (!musicListEl) return;
+  musicListEl.innerHTML = '';
+  SONGS.forEach((s, i) => {
+    const it = document.createElement('button');
+    it.className = 'mm-item' + (bgmEnabled && selectedSong === i ? ' active' : '');
+    it.textContent = s.name;
+    onTap(it, () => selectSong(i));
+    musicListEl.appendChild(it);
+  });
+  const off = document.createElement('button');
+  off.className = 'mm-item' + (!bgmEnabled ? ' active' : '');
+  off.textContent = '배경음악 사용 안 함';
+  onTap(off, () => selectSong(-1));
+  musicListEl.appendChild(off);
+}
+function selectSong(i) {
+  if (i < 0) {                          // 배경음악 사용 안 함
+    bgmEnabled = false;
+    if (bgmEl) bgmEl.pause();
+  } else {
+    bgmEnabled = true;
+    selectedSong = i;
+    if (bgmEl) {
+      if (loadedSongUrl !== SONGS[i].url) { bgmEl.src = SONGS[i].url; loadedSongUrl = SONGS[i].url; }
+      if (game.started) bgmEl.play().catch(() => {}); // 진행 중이면 즉시 재생(탭=사용자 제스처)
+    }
+  }
+  buildMusicMenu();                     // active 표시 갱신
+  if (musicMenu) musicMenu.classList.add('hidden');
+}
+// 메뉴를 트리거(음표 버튼/FAB) 바로 아래에 띄운다(화면 밖으로 넘치면 위쪽에).
+function placeMusicMenuNear(trigger) {
+  if (!musicMenu || !trigger) return;
+  const r = trigger.getBoundingClientRect();
+  const w = musicMenu.offsetWidth || 230, h = musicMenu.offsetHeight || 160;
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+  let top = r.bottom + 8;
+  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 8);
+  musicMenu.style.left = left + 'px';
+  musicMenu.style.top = top + 'px';
+}
+function toggleMusicMenuFrom(trigger) {
+  if (!musicMenu) return;
+  if (musicMenu.classList.contains('hidden')) {
+    buildMusicMenu();
+    musicMenu.classList.remove('hidden');
+    placeMusicMenuNear(trigger);
+  } else {
+    musicMenu.classList.add('hidden');
+  }
+}
+// 탭 대상이 음표 버튼/FAB/메뉴인지(오버레이 클릭 동작에서 제외할 때 사용)
+function isMusicTap(e) {
+  return !!(e && e.target && e.target.closest && e.target.closest('.music-fab, #music-btn, #music-menu'));
+}
+onTap(musicBtn, () => toggleMusicMenuFrom(musicBtn));
+// 일러스트 화면(인트로/일시정지/게임오버)의 큰 음표 버튼들 — 같은 메뉴를 띄운다.
+document.querySelectorAll('.music-fab').forEach((el) => onTap(el, () => toggleMusicMenuFrom(el)));
+// 메뉴·트리거 바깥을 누르면 닫기
+window.addEventListener('pointerdown', (e) => {
+  if (!musicMenu || musicMenu.classList.contains('hidden')) return;
+  if (e.target.closest('#music-menu, #music-btn, .music-fab')) return;
+  musicMenu.classList.add('hidden');
+});
+buildMusicMenu();
 
 // 조종석 창(미니맵)을 더블클릭/더블탭 → 조종석 시점을 전체화면으로(작은 창엔 게임 화면).
 // 다시 작은 창을 더블클릭하면 원래대로(게임 전체 / 조종석 작은 창).
@@ -2072,7 +2349,7 @@ function toggleCockpitMain() {
 if (minimapEl) {
   // 한 번의 클릭/탭(마우스·터치 공통)으로 화면 전환. 일시정지 버튼 위는 제외.
   minimapEl.addEventListener('pointerup', (e) => {
-    if (e.target.closest('#pause-btn')) return;
+    if (e.target.closest('#pause-btn, #music-btn')) return; // 버튼 위 탭은 시점 전환 제외
     toggleCockpitMain();
   });
 
@@ -2143,8 +2420,59 @@ function updateDiamonds() {
   if (!diamondsEl) return;
   // 남은 다이아몬드는 채워진 ◆, 잃은 자리는 테두리만 남은 ◇(흐리게)로 표시
   const on = '◆'.repeat(game.diamonds);
-  const off = '◇'.repeat(MAX_DIAMONDS - game.diamonds);
+  const off = '◇'.repeat(Math.max(0, MAX_DIAMONDS - game.diamonds));
   diamondsEl.innerHTML = on + '<span class="lost">' + off + '</span>';
+}
+
+// 에너지 게이지: 10칸을 빨강→초록→파랑 그라데이션으로 만들고, 에너지 비율만큼 켠다.
+const ENERGY_SEGS = 10;
+const energyEl = document.getElementById('energy');
+const energyPctEl = document.getElementById('energy-pct');
+const energyBarEl = document.getElementById('energy-bar');
+const energySegEls = [];
+function buildEnergyBar() {
+  if (!energyBarEl) return;
+  for (let i = 0; i < ENERGY_SEGS; i++) {
+    const seg = document.createElement('div');
+    seg.className = 'seg';
+    const hue = (i / (ENERGY_SEGS - 1)) * 240; // 0=빨강 → 120=초록 → 240=파랑
+    seg.style.setProperty('--seg', `hsl(${hue}, 90%, 55%)`);
+    energyBarEl.appendChild(seg);
+    energySegEls.push(seg);
+  }
+}
+function updateEnergy() {
+  if (!energyEl) return;
+  const e = Math.max(0, Math.min(100, game.energy));
+  if (energyPctEl) energyPctEl.textContent = Math.ceil(e) + '%';
+  energyEl.classList.toggle('low', e <= 50);   // 50% 이하 → ENERGY LOW + 게이지 깜빡임
+  for (let i = 0; i < energySegEls.length; i++) {
+    const on = e > i * (100 / ENERGY_SEGS);  // i번째 칸은 에너지가 그 구간을 넘기면 켜짐
+    const seg = energySegEls[i];
+    seg.classList.toggle('on', on);
+    seg.style.background = on ? 'var(--seg)' : 'rgba(255,255,255,0.07)';
+  }
+}
+buildEnergyBar();
+updateEnergy();
+// 에너지 소모. 0 이하가 되면 즉시 게임오버 대신 다이아몬드 1개 차감 후 에너지 재충전.
+// (다이아몬드가 더 없으면 그때 게임오버)
+function drainEnergy(amount) {
+  if (game.over) return;
+  game.energy -= amount;
+  if (game.energy <= 0) {
+    game.diamonds -= 1;
+    updateDiamonds();
+    if (game.diamonds <= 0) {
+      game.diamonds = 0; game.energy = 0;
+      updateDiamonds(); updateEnergy();
+      gameOver();
+      return;
+    }
+    game.energy = 100; // 다이아 1개로 버티고 계속(에너지 재충전)
+    popText('⚠ ENERGY OUT  -◆', window.innerWidth / 2, window.innerHeight * 0.42, '#ff5a4a', 30);
+  }
+  updateEnergy();
 }
 // 충돌 시 다이아몬드 1개 소멸 → 다 사라지면 게임오버.
 // 단, 마지막 다이아몬드를 잃어도 즉시 끝내지 않고, 충돌 스핀이 멈춘 뒤(animate 의
@@ -2376,6 +2704,7 @@ function animate() {
       // 좌/우 버튼(또는 화살표)을 누르고 있으면 해당 버튼마다 10점 감점 + -10 팝업
       if (keyInput.left)  { addScore(-10); popAtButton('btn-left',  '-10', '#ff5a4a'); }
       if (keyInput.right) { addScore(-10); popAtButton('btn-right', '-10', '#ff5a4a'); }
+      drainEnergy(1); // 에너지: 1초에 1% 감소(0 되면 다이아 1개 차감 후 재충전)
     }
 
     // 카메라가 차를 따라가도록 이동량만큼 평행이동(궤도·줌은 사용자 제어 유지)
@@ -2496,6 +2825,9 @@ function animate() {
 
     // --- 충돌 검사(주인공 ↔ 상대) → 양쪽을 서로 반대로 스핀시킨다 ---
     checkCollisions();
+
+    // --- 게임 아이템: 트랙 따라 이동·생성, 주인공이 지나가면 획득 ---
+    updateItems(dt);
   }
 
   // 충돌 스파크 + 사람(걷기/뛰기) 갱신. 사람은 실제 렌더되는 카메라(체이스/조종석) 시야
