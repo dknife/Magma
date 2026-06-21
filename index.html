@@ -398,13 +398,14 @@
       height: 92px;
     }
 
-    /* 모바일: Score/Best/다이아몬드를 조종석 작은 창 안(안내문 아래)에 표시 */
-    body.mobile #minimap #score,
-    body.mobile #minimap #diamonds {
-      position: absolute;
+    /* 모바일: Score/Best/다이아몬드를 작은 창(하단 ≈108px)과 에너지 게이지(상단 184px) 사이에 가운데 정렬 */
+    body.mobile #score,
+    body.mobile #diamonds {
+      position: fixed;
       left: 50%;
       transform: translateX(-50%);
       white-space: nowrap;
+      text-align: center;
       z-index: 6;
       /* 밝은/어두운 배경 모두에서 보이도록 검은 테두리 + 글로우 */
       text-shadow:
@@ -412,16 +413,16 @@
         -1px  1px 0 #000,  1px  1px 0 #000,
          0    0   3px rgba(0, 0, 0, 0.9);
     }
-    body.mobile #minimap #score {
-      top: 22px;
-      font-size: 11px;
-      letter-spacing: 0.08em;
+    body.mobile #score {
+      top: 120px;
+      font-size: 13px;
+      letter-spacing: 0.06em;
     }
-    body.mobile #minimap #score b { font-size: 16px; margin-left: 4px; }
-    body.mobile #minimap #score .best { margin-left: 12px; }
-    body.mobile #minimap #diamonds {
-      top: 44px;
-      font-size: 15px;
+    body.mobile #score b { font-size: 18px; margin-left: 4px; }
+    body.mobile #score .best { margin-left: 14px; }
+    body.mobile #diamonds {
+      top: 150px;
+      font-size: 17px;
       letter-spacing: 2px;
     }
 
@@ -999,8 +1000,8 @@
     .lb-panel {
       position: absolute;
       top: 64px;
-      width: 246px;
-      max-height: 70vh;
+      width: 220px;
+      max-height: 68vh;
       overflow: hidden;
       background: rgba(12, 16, 22, 0.62);
       border: 1px solid rgba(255, 255, 255, 0.14);
@@ -1008,9 +1009,11 @@
       padding: 10px 12px 12px;
     }
     .lb-score { left: 16px; }
-    .lb-lap { right: 16px; }
+    .lb-lap { left: 50%; transform: translateX(-50%); }
+    .lb-finish { right: 16px; }
     .lb-title { font-size: 14px; font-weight: 900; letter-spacing: 0.1em; text-align: center; margin-bottom: 8px; color: #ffd24a; }
     .lb-lap .lb-title { color: #5fd0ff; }
+    .lb-finish .lb-title { color: #7CFC6A; }
     .lb-row { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 1.85; }
     .lb-rank { width: 20px; text-align: right; color: #9aa3ad; font-weight: 800; }
     .lb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #dfe4ea; }
@@ -1024,6 +1027,7 @@
     }
     body.mobile #leaderboard.show-score .lb-score { display: block; }
     body.mobile #leaderboard.show-lap .lb-lap { display: block; }
+    body.mobile #leaderboard.show-finish .lb-finish { display: block; }
     body.mobile .lb-mobile-title {
       display: block; position: absolute; top: 50px; left: 50%; transform: translateX(-50%);
       font-size: 13px; font-weight: 900; letter-spacing: 0.08em; color: #fff;
@@ -1039,6 +1043,51 @@
     }
     body.mobile #lb-prev { left: calc(50% - 132px); }
     body.mobile #lb-next { right: calc(50% - 132px); }
+
+    /* Hall of Fame 장면(스코어보드 위 어두운 배경 + 제목/버튼). 순위표(#leaderboard)는 그 위에 표시 */
+    #halloffame {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      pointer-events: none;
+      background: rgba(6, 9, 14, 0.62);
+      font-family: "Segoe UI", system-ui, sans-serif;
+    }
+    #halloffame.hidden { display: none; }
+    .hof-title {
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: clamp(22px, 4vw, 38px);
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      background: linear-gradient(180deg, #ffe7a3 0%, #ffb340 55%, #ff6a3d 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .hof-actions {
+      position: absolute;
+      bottom: 26px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 18px;
+      pointer-events: auto;
+    }
+    .hof-actions button {
+      padding: 14px 34px;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      border-radius: 12px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 0.08s ease;
+    }
+    .hof-actions button:active { transform: translateY(1px); }
+    #godash-btn { color: #fff; background: #ff6a3d; border: none; box-shadow: 0 6px 22px rgba(255, 106, 61, 0.4); }
+    #back-select-btn { color: #ffd9c7; background: rgba(20, 23, 28, 0.5); border: 1px solid rgba(255, 106, 61, 0.7); }
+    body.mobile .hof-actions button { padding: 12px 22px; font-size: 15px; }
 
     /* 아이템 획득 연출(확대 후 HUD 로 날아감) */
     .item-fly {
@@ -1199,12 +1248,25 @@
       <div class="lb-body" id="lb-score-body"></div>
     </div>
     <div class="lb-panel lb-lap">
-      <div class="lb-title">LAP TIME</div>
+      <div class="lb-title">BEST LAP</div>
       <div class="lb-body" id="lb-lap-body"></div>
     </div>
+    <div class="lb-panel lb-finish">
+      <div class="lb-title">FINISH TIME</div>
+      <div class="lb-body" id="lb-finish-body"></div>
+    </div>
     <button id="lb-prev" class="lb-arrow" aria-label="다른 분야">◀</button>
-    <div id="lb-mobile-title" class="lb-mobile-title">LAP TIME TOP 5</div>
+    <div id="lb-mobile-title" class="lb-mobile-title">BEST LAP TOP 5</div>
     <button id="lb-next" class="lb-arrow" aria-label="다른 분야">▶</button>
+  </div>
+
+  <!-- Hall of Fame: 차량 선택+이름 입력 후 진입. 스코어보드를 보고 출발(Go Dash!)/선택으로 복귀 -->
+  <div id="halloffame" class="hidden">
+    <div class="hof-title">HALL OF FAME</div>
+    <div class="hof-actions">
+      <button id="godash-btn">Go Dash!</button>
+      <button id="back-select-btn">Back To Select</button>
+    </div>
   </div>
 
   <!-- 사용법 안내(HOW TO) -->
@@ -1290,7 +1352,7 @@
       <div class="fin-title">FINISH!</div>
       <div class="fin-congrats">🎉 축하합니다, <span id="fin-name">Player</span>! 20랩 완주!</div>
       <div class="fin-row">SCORE <span id="fin-score">0</span> <em class="fin-rank" id="fin-srank">-</em></div>
-      <div class="fin-row">TOTAL TIME <span id="fin-time">0:00.0</span></div>
+      <div class="fin-row">FINISH TIME <span id="fin-time">0:00.0</span> <em class="fin-rank" id="fin-frank">-</em></div>
       <div class="fin-row">BEST LAP <span id="fin-best">-</span> <em class="fin-rank" id="fin-lrank">-</em></div>
       <div id="fin-points" class="fin-points"></div>
       <button id="fin-restart" class="ps-btn">RESTART</button>
