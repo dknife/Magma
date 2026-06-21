@@ -214,6 +214,10 @@
     #score b { color: #fff; font-size: 24px; font-weight: 800; margin-left: 6px; }
     #score .best { margin-left: 18px; }
     #score #best-val { color: #ffd24a; } /* 최고 기록(금색) */
+    #score .lap { margin-left: 18px; }
+    #score #lap-val { color: #7CFC6A; }  /* 현재 랩(연두) */
+    #score .time { margin-left: 18px; }
+    #score #time-val { color: #5fd0ff; } /* 경과 시간(청록) */
 
     /* 다이아몬드(생명) */
     #diamonds {
@@ -229,6 +233,23 @@
       z-index: 6;
     }
     #diamonds .lost { color: rgba(255, 255, 255, 0.3); } /* 잃은 다이아몬드(테두리만) */
+
+    /* 랩 타임 패널(우측 상단) */
+    #laptimes {
+      position: fixed;
+      top: 14px;
+      right: 16px;
+      text-align: right;
+      font-family: "Consolas", "Menlo", monospace;
+      pointer-events: none;
+      user-select: none;
+      z-index: 6;
+      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.75);
+    }
+    #laptimes .lt-head { font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 6px; }
+    #laptimes .lt-head b { color: #5fd0ff; }
+    #laptimes #lap-list { font-size: 13px; line-height: 1.55; color: #aab2bd; }
+    #laptimes #lap-list .lt-item b { color: #7CFC6A; margin-left: 4px; }
 
     /* cockpit 뷰 중앙 일시정지 버튼 */
     #pause-btn {
@@ -400,6 +421,7 @@
     body.titlescreen #minimap,
     body.titlescreen .touch-btn,
     body.titlescreen #energy,
+    body.titlescreen #laptimes,
     body.titlescreen #celebrate { display: none !important; }
 
     /* 인트로 스플래시: 일러스트 + 테마 배경. 클릭하면 타이틀로 진입 */
@@ -481,6 +503,11 @@
       transition: opacity 0.45s ease;
     }
     #pausescreen.hidden { opacity: 0; pointer-events: none; }
+    /* 숨김(opacity 0) 중에는 자식 버튼도 클릭 불가로 — pointer-events:auto 가 부모를 덮어 보이지 않는데도
+       눌리던 문제(차량 선택 화면 중앙의 투명 'Restart Game' 클릭) 방지 */
+    #pausescreen.hidden .ps-btn,
+    #pausescreen.hidden .music-fab,
+    #intro.hidden .music-fab { pointer-events: none; }
     #pausescreen::before {
       content: '';
       position: absolute;
@@ -550,6 +577,17 @@
       letter-spacing: 0.14em;
       color: #cdd3da;
       text-shadow: 0 1px 10px rgba(0, 0, 0, 0.7);
+    }
+    /* 차량 선택 안내(설명 아래, 깜빡임) */
+    #title .t-hint {
+      margin-top: 10px;
+      text-align: center;
+      font-size: clamp(12px, 1.8vw, 16px);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: #ffe7a3;
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
+      animation: introBlink 1.4s ease-in-out infinite;
     }
     #title .t-actions {
       display: flex;
@@ -806,6 +844,103 @@
     }
     #energy .seg.on { box-shadow: 0 0 9px var(--seg), 0 0 2px var(--seg); }
 
+    /* 충돌 시 다이아몬드 소멸 연출(눈앞에 현재 개수 → 하나 깜빡이며 사라짐 → 남은 수 표시) */
+    .diamond-loss {
+      position: fixed;
+      left: 50%;
+      top: 42%;
+      transform: translate(-50%, -50%);
+      z-index: 36;
+      pointer-events: none;
+      user-select: none;
+      text-align: center;
+      font-family: "Segoe UI", system-ui, sans-serif;
+    }
+    .diamond-loss .dl-row {
+      font-size: clamp(34px, 6vw, 64px);
+      line-height: 1;
+      color: #5fd0ff;
+      text-shadow: 0 2px 14px rgba(0, 0, 0, 0.6), 0 0 22px rgba(95, 208, 255, 0.5);
+    }
+    .diamond-loss .dl-row span { display: inline-block; margin: 0 5px; }
+    .diamond-loss .dl-text {
+      margin-top: 12px;
+      font-size: clamp(18px, 3.2vw, 32px);
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      color: #ff5a4a;
+      text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
+      opacity: 0;
+    }
+
+    /* 랩 안내 배너(작게 → 크게 → 깜빡 → 사라짐) */
+    .announce {
+      position: fixed;
+      left: 50%;
+      top: 38%;
+      transform: translate(-50%, -50%);
+      z-index: 24;
+      pointer-events: none;
+      user-select: none;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: clamp(28px, 6vw, 64px);
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      color: #fff;
+      text-shadow: 0 3px 22px rgba(0, 0, 0, 0.6);
+      white-space: nowrap;
+    }
+    .announce.strong {
+      color: #ffd24a;
+      text-shadow: 0 3px 26px rgba(255, 140, 40, 0.55), 0 2px 12px rgba(0, 0, 0, 0.7);
+    }
+
+    /* 완주(FINISH) 결과 화면 */
+    #finish {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(8, 10, 14, 0.5); /* 뒤 축포가 비치도록 옅게(카드는 불투명) */
+      z-index: 23;
+      font-family: "Segoe UI", system-ui, sans-serif;
+    }
+    #finish.hidden { display: none; }
+    #finish .fin-card {
+      width: 86%;
+      max-width: 420px;
+      padding: 30px 32px 26px;
+      text-align: center;
+      background: rgba(24, 27, 33, 0.98);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 18px;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+    }
+    #finish .fin-title {
+      font-size: clamp(34px, 7vw, 60px);
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      background: linear-gradient(180deg, #ffe7a3 0%, #ffb340 50%, #ff6a3d 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    #finish .fin-congrats {
+      margin-top: 10px;
+      font-size: clamp(15px, 2.6vw, 22px);
+      font-weight: 800;
+      color: #ffe7a3;
+      letter-spacing: 0.04em;
+    }
+    #finish .fin-row {
+      margin-top: 14px;
+      font-size: clamp(15px, 2.4vw, 22px);
+      letter-spacing: 0.1em;
+      color: #cdd3da;
+    }
+    #finish .fin-row span { color: #fff; font-weight: 800; margin-left: 10px; }
+    #finish #fin-time { color: #5fd0ff; }
+    #finish #fin-restart { margin-top: 24px; }
+
     /* 아이템 획득 연출(확대 후 HUD 로 날아감) */
     .item-fly {
       position: fixed;
@@ -944,6 +1079,7 @@
     <div class="t-head">
       <div class="t-name">Select Your Machine</div>
       <div class="t-sub" id="car-sub">Genesis Magma - 한국 최초 Le Mans 24시 완주</div>
+      <div class="t-hint">좌우 화살표나 좌우 버튼을 눌러 차량을 선택하세요</div>
     </div>
     <!-- 좌우 화살표로 주인공 차량 메시 선택(가운데 회전 차량이 바뀜) -->
     <button id="car-prev" class="car-arrow" aria-label="이전 차량">◀</button>
@@ -1006,8 +1142,14 @@
 
   <canvas id="trackmap"></canvas>
 
-  <div id="score">SCORE<b id="score-val">0</b><span class="best">BEST<b id="best-val">0</b></span></div>
+  <div id="score">SCORE<b id="score-val">0</b><span class="best">BEST<b id="best-val">0</b></span><span class="lap">LAP<b id="lap-val">1</b>/20</span></div>
   <div id="diamonds">◆◆◆◆◆</div>
+
+  <!-- 랩 타임(우측 상단): 상단=현재랩 경과시간(큰 글씨), 아래=완료한 랩별 기록 -->
+  <div id="laptimes">
+    <div id="cur-lap" class="lt-head">현재랩 0' 00" .000</div>
+    <div id="lap-list"></div>
+  </div>
 
   <!-- 에너지 게이지(화면 중앙 상단): 10칸(빨강→초록→파랑) + 상단 % 표시. 0%면 게임오버 -->
   <div id="energy">
@@ -1021,6 +1163,18 @@
     <img id="gameover-art" src="./illust/gameover.png" alt="GAME OVER" />
     <div id="gameover-score">SCORE <span>0</span></div>
     <button class="music-fab"><span class="note">♪</span> 배경음악 변경</button>
+  </div>
+
+  <!-- 완주(20랩) 결과 화면: 점수 + 완주 시간 -->
+  <div id="finish" class="hidden">
+    <div class="fin-card">
+      <div class="fin-title">FINISH!</div>
+      <div class="fin-congrats">🎉 축하합니다! 20랩 완주!</div>
+      <div class="fin-row">SCORE <span id="fin-score">0</span></div>
+      <div class="fin-row">TOTAL TIME <span id="fin-time">0:00.0</span></div>
+      <div class="fin-row">BEST LAP <span id="fin-best">-</span></div>
+      <button id="fin-restart" class="ps-btn">RESTART</button>
+    </div>
   </div>
 
   <!-- 일시정지 화면: 타이틀 일러스트 + 두 버튼(복귀/메인). 음표로 배경음악 변경 -->
