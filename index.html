@@ -249,6 +249,11 @@
     #laptimes .lt-head { font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 4px; }
     #laptimes .lt-head b { color: #5fd0ff; font-weight: 800; }
     #laptimes .lt-best { font-size: 14px; font-weight: 800; color: #ffd24a; }
+    #laptimes .lt-worst { font-size: 14px; font-weight: 800; color: #ff8a6a; }
+    #laptimes #lap-list { margin-top: 6px; font-size: 12px; line-height: 1.5; color: #aab2bd; }
+    #laptimes #lap-list .lt-item b { color: #7CFC6A; margin-left: 4px; }
+    /* 모바일: 전체 랩 목록은 숨김(현재랩 + best/worst 만) */
+    body.mobile #laptimes #lap-list { display: none; }
 
     /* cockpit 뷰 중앙 일시정지 버튼 */
     #pause-btn {
@@ -1152,10 +1157,12 @@
   <div id="score">SCORE<b id="score-val">0</b><span class="best">BEST<b id="best-val">0</b></span><span class="lap">LAP<b id="lap-val">1</b>/20</span></div>
   <div id="diamonds">◆◆◆◆◆</div>
 
-  <!-- 랩 타임(우측 상단): 현재랩 경과시간 + 베스트 랩만 표시 -->
+  <!-- 랩 타임(우측 상단): 현재랩 + best/worst (+ 데스크탑은 전체 랩 목록) -->
   <div id="laptimes">
     <div id="cur-lap" class="lt-head">현재랩 0'00".000</div>
     <div id="best-lap" class="lt-best">best: -</div>
+    <div id="worst-lap" class="lt-worst">worst: -</div>
+    <div id="lap-list"></div>
   </div>
 
   <!-- 에너지 게이지(화면 중앙 상단): 10칸(빨강→초록→파랑) + 상단 % 표시. 0%면 게임오버 -->

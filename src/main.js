@@ -2497,7 +2497,8 @@ function drawTrackmap() {
 // ---------------------------------------------------------------------------
 // 점수 / 게임오버
 // ---------------------------------------------------------------------------
-const game = { score: 0, sec: 0, diamonds: MAX_DIAMONDS, energy: 100, best: 0, over: false, paused: false, autoPaused: false, frozen: false, started: false, grace: 0, countdown: 0, cdShown: 0, pendingOver: false, raceTime: 0, lapClock: 0, lap: 0, finished: false, finishing: false, bestLap: 0, bestLapNum: 0 };
+const game = { score: 0, sec: 0, diamonds: MAX_DIAMONDS, energy: 100, best: 0, over: false, paused: false, autoPaused: false, frozen: false, started: false, grace: 0, countdown: 0, cdShown: 0, pendingOver: false, raceTime: 0, lapClock: 0, lap: 0, finished: false, finishing: false, bestLap: 0, bestLapNum: 0, worstLap: 0, worstLapNum: 0 };
+const lapTimes = [];            // 완료한 각 랩 기록(초) — 데스크탑 전체 목록용
 const scoreValEl = document.getElementById('score-val');
 const bestValEl = document.getElementById('best-val');
 const diamondsEl = document.getElementById('diamonds');
@@ -2582,11 +2583,11 @@ function startGame() {
   game.started = true;
   // 레이스 상태 초기화(20랩)
   game.raceTime = 0; game.lapClock = 0; game.lap = 0; game.finished = false; game.finishing = false;
-  game.bestLap = 0; game.bestLapNum = 0; fwActive = false;
-  lapProgress = 0; energyMark = 0; diamondMark = 0;
+  game.bestLap = 0; game.bestLapNum = 0; game.worstLap = 0; game.worstLapNum = 0; fwActive = false;
+  lapTimes.length = 0; lapProgress = 0; energyMark = 0; diamondMark = 0;
   prevLapU = drive.u; checkerBlinkT = 0;
   if (finishChecker) finishChecker.material.emissiveIntensity = 0;
-  updateBestLap(); updateRaceHud();
+  updateLapPanel(); updateRaceHud();
   document.body.classList.remove('titlescreen'); // 게임 HUD 노출
   if (titleScreenEl) titleScreenEl.classList.add('hidden');
   if (howtoScreenEl) howtoScreenEl.classList.add('hidden');
@@ -2919,11 +2920,11 @@ function returnToTitle() {
   game.over = false; game.paused = false; game.autoPaused = false; game.frozen = false;
   game.started = false; game.grace = 0; game.countdown = 0; game.cdShown = 0; game.pendingOver = false;
   game.raceTime = 0; game.lapClock = 0; game.lap = 0; game.finished = false; game.finishing = false;
-  game.bestLap = 0; game.bestLapNum = 0; fwActive = false;
-  prevLapU = 0; checkerBlinkT = 0;
+  game.bestLap = 0; game.bestLapNum = 0; game.worstLap = 0; game.worstLapNum = 0; fwActive = false;
+  lapTimes.length = 0; prevLapU = 0; checkerBlinkT = 0;
   if (finishChecker) finishChecker.material.emissiveIntensity = 0;
   if (scoreValEl) scoreValEl.textContent = '0';
-  updateDiamonds(); updateEnergy(); updateBestLap(); updateRaceHud();
+  updateDiamonds(); updateEnergy(); updateLapPanel(); updateRaceHud();
   if (pauseBtn) pauseBtn.textContent = '⏸';
 
   // 주행 상태를 시작점으로 리셋
@@ -3028,6 +3029,8 @@ function fmtTime(t) { // 결과용: m:ss.d
 }
 const curLapEl = document.getElementById('cur-lap');
 const bestLapEl = document.getElementById('best-lap');
+const worstLapEl = document.getElementById('worst-lap');
+const lapListEl = document.getElementById('lap-list');
 const lapValEl = document.getElementById('lap-val');
 const finishEl = document.getElementById('finish');
 const finScoreEl = document.getElementById('fin-score');
@@ -3051,12 +3054,12 @@ function announce(text, strong) {
   ], { duration: 2200, easing: 'ease-out', fill: 'forwards' });
   anim.onfinish = () => el.remove();
 }
-// 베스트 랩 표시 갱신: best(k-lap): m'ss".mmm
-function updateBestLap() {
-  if (!bestLapEl) return;
-  bestLapEl.textContent = game.bestLap > 0
-    ? `best(${game.bestLapNum}-lap): ${fmtLap(game.bestLap)}`
-    : 'best: -';
+// 랩 패널 갱신: best / worst (+ 데스크탑은 전체 랩 목록).
+function updateLapPanel() {
+  if (bestLapEl) bestLapEl.textContent = game.bestLap > 0 ? `best(${game.bestLapNum}-lap): ${fmtLap(game.bestLap)}` : 'best: -';
+  if (worstLapEl) worstLapEl.textContent = game.worstLap > 0 ? `worst(${game.worstLapNum}-lap): ${fmtLap(game.worstLap)}` : 'worst: -';
+  // 데스크탑(비모바일): 완성한 모든 랩 기록을 계속 누적 표시(CSS 로 모바일에선 숨김).
+  if (lapListEl) lapListEl.innerHTML = lapTimes.map((t, i) => `<div class="lt-item">Lap ${i + 1}:<b>${fmtLap(t)}</b></div>`).join('');
 }
 // 매 프레임: 현재 랩 경과시간 + 현재 랩 번호 HUD 갱신
 function updateRaceHud() {
@@ -3073,12 +3076,12 @@ function checkLap() {
   if (prevLapU - drive.u > 0.5) {
     game.lap += 1;
     const done = game.lap;
-    if (game.bestLap === 0 || game.lapClock < game.bestLap) {
-      game.bestLap = game.lapClock;
-      game.bestLapNum = done;
-    }
+    const lt = game.lapClock;
+    lapTimes.push(lt);
+    if (game.bestLap === 0 || lt < game.bestLap) { game.bestLap = lt; game.bestLapNum = done; }
+    if (game.worstLap === 0 || lt > game.worstLap) { game.worstLap = lt; game.worstLapNum = done; }
     game.lapClock = 0;  // 다음 랩 시간 측정 시작
-    updateBestLap();
+    updateLapPanel();
     if (done >= TOTAL_LAPS) {
       announce('FINISH', true);
       finishRace();
