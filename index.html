@@ -603,9 +603,33 @@
     }
     #title .t-actions {
       display: flex;
-      gap: 18px;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
       pointer-events: auto;
     }
+    #title .t-buttons { display: flex; gap: 18px; }
+    #title .t-name-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      color: #ffd9c7;
+    }
+    #player-name {
+      width: 200px;
+      padding: 9px 14px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      background: rgba(20, 23, 28, 0.6);
+      border: 1px solid rgba(255, 106, 61, 0.7);
+      border-radius: 10px;
+      outline: none;
+    }
+    #player-name::placeholder { color: rgba(255, 217, 199, 0.45); font-weight: 500; }
     #title button {
       padding: 14px 38px;
       font-size: 18px;
@@ -951,7 +975,70 @@
     }
     #finish .fin-row span { color: #fff; font-weight: 800; margin-left: 10px; }
     #finish #fin-time { color: #5fd0ff; }
-    #finish #fin-restart { margin-top: 24px; }
+    #finish #fin-name { color: #ffd24a; font-weight: 900; }
+    #finish .fin-rank { font-style: normal; margin-left: 10px; font-weight: 900; color: #7CFC6A; }
+    #finish .fin-points {
+      margin-top: 16px;
+      font-size: clamp(15px, 2.6vw, 22px);
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      color: #9aa3ad;
+    }
+    #finish .fin-points.got { color: #ffd24a; text-shadow: 0 2px 14px rgba(255, 140, 40, 0.5); }
+    #finish #fin-restart { margin-top: 22px; }
+
+    /* 순위표(리더보드): 좌=스코어, 우=랩타임 */
+    #leaderboard {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 22;
+      font-family: "Segoe UI", system-ui, sans-serif;
+    }
+    #leaderboard.hidden { display: none; }
+    .lb-panel {
+      position: absolute;
+      top: 64px;
+      width: 246px;
+      max-height: 70vh;
+      overflow: hidden;
+      background: rgba(12, 16, 22, 0.62);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 12px;
+      padding: 10px 12px 12px;
+    }
+    .lb-score { left: 16px; }
+    .lb-lap { right: 16px; }
+    .lb-title { font-size: 14px; font-weight: 900; letter-spacing: 0.1em; text-align: center; margin-bottom: 8px; color: #ffd24a; }
+    .lb-lap .lb-title { color: #5fd0ff; }
+    .lb-row { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 1.85; }
+    .lb-rank { width: 20px; text-align: right; color: #9aa3ad; font-weight: 800; }
+    .lb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #dfe4ea; }
+    .lb-val { font-weight: 800; color: #fff; }
+    .lb-arrow, .lb-mobile-title { display: none; }
+
+    /* 모바일: 한 분야만 가운데 상단에 + 좌우 화살표로 토글(랩타임 ↔ 스코어), Top 5 */
+    body.mobile .lb-panel {
+      left: 50%; right: auto; transform: translateX(-50%);
+      top: 78px; width: 232px; display: none;
+    }
+    body.mobile #leaderboard.show-score .lb-score { display: block; }
+    body.mobile #leaderboard.show-lap .lb-lap { display: block; }
+    body.mobile .lb-mobile-title {
+      display: block; position: absolute; top: 50px; left: 50%; transform: translateX(-50%);
+      font-size: 13px; font-weight: 900; letter-spacing: 0.08em; color: #fff;
+      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+    }
+    body.mobile .lb-arrow {
+      display: flex; align-items: center; justify-content: center;
+      position: absolute; top: 44px; width: 38px; height: 38px;
+      font-size: 22px; font-weight: 900; color: #fff;
+      background: rgba(20, 23, 28, 0.6); border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 10px; pointer-events: auto; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body.mobile #lb-prev { left: calc(50% - 132px); }
+    body.mobile #lb-next { right: calc(50% - 132px); }
 
     /* 아이템 획득 연출(확대 후 HUD 로 날아감) */
     .item-fly {
@@ -1097,9 +1184,27 @@
     <button id="car-prev" class="car-arrow" aria-label="이전 차량">◀</button>
     <button id="car-next" class="car-arrow" aria-label="다음 차량">▶</button>
     <div class="t-actions">
-      <button id="start-btn">START</button>
-      <button id="howto-btn">HOW TO</button>
+      <div class="t-name-row">NAME <input id="player-name" type="text" maxlength="12" placeholder="이름 입력" autocomplete="off" /></div>
+      <div class="t-buttons">
+        <button id="start-btn">START</button>
+        <button id="howto-btn">HOW TO</button>
+      </div>
     </div>
+  </div>
+
+  <!-- 순위표(타이틀/일시정지에서 표시): 좌=스코어, 우=랩타임. 모바일은 한 분야만 + 좌우 토글 -->
+  <div id="leaderboard" class="hidden show-lap">
+    <div class="lb-panel lb-score">
+      <div class="lb-title">SCORE</div>
+      <div class="lb-body" id="lb-score-body"></div>
+    </div>
+    <div class="lb-panel lb-lap">
+      <div class="lb-title">LAP TIME</div>
+      <div class="lb-body" id="lb-lap-body"></div>
+    </div>
+    <button id="lb-prev" class="lb-arrow" aria-label="다른 분야">◀</button>
+    <div id="lb-mobile-title" class="lb-mobile-title">LAP TIME TOP 5</div>
+    <button id="lb-next" class="lb-arrow" aria-label="다른 분야">▶</button>
   </div>
 
   <!-- 사용법 안내(HOW TO) -->
@@ -1183,10 +1288,11 @@
   <div id="finish" class="hidden">
     <div class="fin-card">
       <div class="fin-title">FINISH!</div>
-      <div class="fin-congrats">🎉 축하합니다! 20랩 완주!</div>
-      <div class="fin-row">SCORE <span id="fin-score">0</span></div>
+      <div class="fin-congrats">🎉 축하합니다, <span id="fin-name">Player</span>! 20랩 완주!</div>
+      <div class="fin-row">SCORE <span id="fin-score">0</span> <em class="fin-rank" id="fin-srank">-</em></div>
       <div class="fin-row">TOTAL TIME <span id="fin-time">0:00.0</span></div>
-      <div class="fin-row">BEST LAP <span id="fin-best">-</span></div>
+      <div class="fin-row">BEST LAP <span id="fin-best">-</span> <em class="fin-rank" id="fin-lrank">-</em></div>
+      <div id="fin-points" class="fin-points"></div>
       <button id="fin-restart" class="ps-btn">RESTART</button>
     </div>
   </div>

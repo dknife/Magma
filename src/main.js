@@ -2499,6 +2499,27 @@ function drawTrackmap() {
 // ---------------------------------------------------------------------------
 const game = { score: 0, sec: 0, diamonds: MAX_DIAMONDS, energy: 100, best: 0, over: false, paused: false, autoPaused: false, frozen: false, started: false, grace: 0, countdown: 0, cdShown: 0, pendingOver: false, raceTime: 0, lapClock: 0, lap: 0, finished: false, finishing: false, bestLap: 0, bestLapNum: 0, worstLap: 0, worstLapNum: 0 };
 const lapTimes = [];            // 완료한 각 랩 기록(초) — 데스크탑 전체 목록용
+
+// --- 순위표(스코어 / 랩타임 Top 10) + 플레이어 이름: localStorage 영구 저장 ---
+const BOARDS_KEY = 'magma.boards.v1';
+const NAME_KEY = 'magma.playerName';
+let boards = (() => {
+  try { const b = JSON.parse(localStorage.getItem(BOARDS_KEY)); if (b && Array.isArray(b.score) && Array.isArray(b.lap)) return b; } catch {}
+  return { score: [], lap: [] };
+})();
+function saveBoards() { try { localStorage.setItem(BOARDS_KEY, JSON.stringify(boards)); } catch {} }
+game.playerName = (() => { try { return localStorage.getItem(NAME_KEY) || 'Player'; } catch { return 'Player'; } })();
+// 경기 결과 등록: 스코어(내림차순)·랩타임(오름차순) 보드에 Top 10 이내면 기록. 각 분야 등수 반환.
+function submitResult(name, score, lap, time) {
+  const entry = { name: (name || 'Player').slice(0, 12), score, lap, time };
+  const sRank = boards.score.filter((e) => e.score > score).length + 1;
+  const lRank = lap > 0 ? boards.lap.filter((e) => e.lap > 0 && e.lap < lap).length + 1 : Infinity;
+  let sIn = false, lIn = false;
+  if (sRank <= 10) { boards.score.push({ ...entry }); boards.score.sort((a, b) => b.score - a.score); boards.score = boards.score.slice(0, 10); sIn = true; }
+  if (lap > 0 && lRank <= 10) { boards.lap.push({ ...entry }); boards.lap.sort((a, b) => a.lap - b.lap); boards.lap = boards.lap.slice(0, 10); lIn = true; }
+  if (sIn || lIn) saveBoards();
+  return { sRank, lRank, sIn, lIn };
+}
 const scoreValEl = document.getElementById('score-val');
 const bestValEl = document.getElementById('best-val');
 const diamondsEl = document.getElementById('diamonds');
@@ -2550,6 +2571,7 @@ onTap(introScreenEl, (e) => {
   if (isMusicTap(e)) return; // 음표 버튼/메뉴 탭은 인트로를 닫지 않음
   introScreenEl.classList.add('hidden');
   setTimeout(() => introScreenEl.remove(), 500); // 페이드 아웃 후 DOM 정리
+  showLeaderboard(true); // 타이틀(첫 화면)에 순위표 노출
 });
 
 const titleScreenEl = document.getElementById('title');
@@ -2557,7 +2579,15 @@ const howtoScreenEl = document.getElementById('howto');
 const startBtn = document.getElementById('start-btn');
 const howtoBtn = document.getElementById('howto-btn');
 const howtoBackBtn = document.getElementById('howto-back');
+const nameInput = document.getElementById('player-name');
+if (nameInput) nameInput.value = game.playerName === 'Player' ? '' : game.playerName; // 지난 이름 채움
 onTap(startBtn, startGame);
+// 모바일 순위표 좌우 토글(랩타임 ↔ 스코어)
+const lbPrevBtn = document.getElementById('lb-prev');
+const lbNextBtn = document.getElementById('lb-next');
+const toggleLbView = () => { lbMobileView = lbMobileView === 'lap' ? 'score' : 'lap'; applyMobileLbView(); };
+onTap(lbPrevBtn, toggleLbView);
+onTap(lbNextBtn, toggleLbView);
 // 차량 선택 좌우 화살표(가운데 회전 차량 교체)
 const carPrevBtn = document.getElementById('car-prev');
 const carNextBtn = document.getElementById('car-next');
@@ -2580,6 +2610,13 @@ function resetChaseCamera() {
 function startGame() {
   if (game.started) return;
   resetChaseCamera();                            // 선택 화면에서 만진 카메라 무효화 → 시작 시점으로
+  // 플레이어 이름 확정(입력값 → 저장). 비어 있으면 'Player'.
+  if (nameInput) {
+    const n = nameInput.value.trim().slice(0, 12);
+    game.playerName = n || 'Player';
+    try { localStorage.setItem(NAME_KEY, game.playerName); } catch {}
+  }
+  showLeaderboard(false);                         // 게임 중에는 순위표 숨김
   game.started = true;
   // 레이스 상태 초기화(20랩)
   game.raceTime = 0; game.lapClock = 0; game.lap = 0; game.finished = false; game.finishing = false;
@@ -2900,10 +2937,11 @@ function togglePause() {
   if (game.paused) {
     const ctx = getAudioCtx();
     if (ctx) ctx.suspend(); // 즉시 무음(엔진/효과음·배경음악은 syncAudio 가 함께 정지)
-    // 수동 일시정지에서만 타이틀 일러스트 복귀 화면을 띄운다(자동 정지는 화면을 그대로 멈춤).
-    if (!game.autoPaused && pauseScreenEl) pauseScreenEl.classList.remove('hidden');
+    // 수동 일시정지에서만 타이틀 일러스트 복귀 화면 + 순위표를 띄운다(자동 정지는 화면을 그대로 멈춤).
+    if (!game.autoPaused && pauseScreenEl) { pauseScreenEl.classList.remove('hidden'); showLeaderboard(true); }
   } else {
     if (pauseScreenEl) pauseScreenEl.classList.add('hidden'); // 복귀 → 일러스트 숨김(카운트다운 노출)
+    showLeaderboard(false);
     game.autoPaused = false;  // 재개 시 자동정지 플래그 해제
     beginCountdown();        // 재개도 3-2-1 후 출발
     // iOS: AudioContext.resume() 은 반드시 사용자 제스처(이 클릭) 안에서 호출해야 한다.
@@ -2962,6 +3000,7 @@ function returnToTitle() {
   if (finishEl) finishEl.classList.add('hidden');
   if (titleScreenEl) titleScreenEl.classList.remove('hidden');
   document.body.classList.add('titlescreen');
+  showLeaderboard(true); // 타이틀 복귀 시 순위표 노출
 }
 // 창이 포커스를 잃거나(blur) 탭이 가려지면(다른 앱/탭 전환) 자동 일시정지.
 // 자동 정지(autoPaused)는 전시(쇼케이스) 모델을 띄우지 않고, 포커스를 되찾으면 자동 재개한다.
@@ -3036,6 +3075,44 @@ const finishEl = document.getElementById('finish');
 const finScoreEl = document.getElementById('fin-score');
 const finTimeEl = document.getElementById('fin-time');
 const finBestEl = document.getElementById('fin-best');
+const finSRankEl = document.getElementById('fin-srank');
+const finLRankEl = document.getElementById('fin-lrank');
+const finPointsEl = document.getElementById('fin-points');
+const finNameEl = document.getElementById('fin-name');
+// --- 순위표(리더보드) 표시: 좌=스코어, 우=랩타임. 데스크탑 Top10 / 모바일 Top5(토글) ---
+const leaderboardEl = document.getElementById('leaderboard');
+const lbScoreBody = document.getElementById('lb-score-body');
+const lbLapBody = document.getElementById('lb-lap-body');
+const lbMobileTitle = document.getElementById('lb-mobile-title');
+let lbMobileView = 'lap'; // 모바일에서 현재 보이는 분야(기본 랩타임)
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function boardRows(list, kind, max) {
+  let rows = '';
+  for (let i = 0; i < max; i++) {
+    const e = list[i];
+    const nm = e ? escapeHtml(e.name) : '—';
+    const val = e ? (kind === 'score' ? e.score : fmtLap(e.lap)) : '—';
+    rows += `<div class="lb-row"><span class="lb-rank">${i + 1}</span><span class="lb-name">${nm}</span><span class="lb-val">${val}</span></div>`;
+  }
+  return rows;
+}
+function applyMobileLbView() {
+  if (!leaderboardEl) return;
+  leaderboardEl.classList.toggle('show-score', lbMobileView === 'score');
+  leaderboardEl.classList.toggle('show-lap', lbMobileView === 'lap');
+  if (lbMobileTitle) lbMobileTitle.textContent = lbMobileView === 'score' ? 'SCORE TOP 5' : 'LAP TIME TOP 5';
+}
+function updateLeaderboards() {
+  const max = IS_MOBILE ? 5 : 10;
+  if (lbScoreBody) lbScoreBody.innerHTML = boardRows(boards.score, 'score', max);
+  if (lbLapBody) lbLapBody.innerHTML = boardRows(boards.lap, 'lap', max);
+  if (IS_MOBILE) applyMobileLbView();
+}
+function showLeaderboard(show) {
+  if (!leaderboardEl) return;
+  if (show) { updateLeaderboards(); leaderboardEl.classList.remove('hidden'); }
+  else leaderboardEl.classList.add('hidden');
+}
 // 화면 중앙 안내 배너(작게→크게→깜빡→사라짐). strong=강조(노랑/큼).
 function announce(text, strong) {
   const el = document.createElement('div');
@@ -3108,9 +3185,20 @@ function finishStop() {
   drive.speed = 0;
   const ctx = getAudioCtx();
   if (ctx) ctx.suspend();        // 엔진 정지(배경음악은 유지)
+  // 결과를 순위표에 등록하고 각 분야 등수를 받는다.
+  const res = submitResult(game.playerName, game.score, game.bestLap, game.raceTime);
+  if (finNameEl) finNameEl.textContent = game.playerName;
   if (finScoreEl) finScoreEl.textContent = game.score;
   if (finTimeEl) finTimeEl.textContent = fmtTime(game.raceTime);
   if (finBestEl && game.bestLap > 0) finBestEl.textContent = `${fmtLap(game.bestLap)} (lap ${game.bestLapNum})`;
+  if (finSRankEl) finSRankEl.textContent = `#${res.sRank}`;
+  if (finLRankEl) finLRankEl.textContent = res.lRank === Infinity ? '—' : `#${res.lRank}`;
+  if (finPointsEl) {
+    const eligible = res.sIn || res.lIn;
+    finPointsEl.textContent = eligible ? '🎉 포인트 획득권! (TOP 10 기록)' : '아쉽게 TOP 10 진입 실패';
+    finPointsEl.classList.toggle('got', eligible);
+  }
+  updateLeaderboards(); // 다음 타이틀/일시정지 화면에 반영
   if (finishEl) finishEl.classList.remove('hidden');
 }
 
