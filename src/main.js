@@ -2957,11 +2957,10 @@ function togglePause() {
   if (game.paused) {
     const ctx = getAudioCtx();
     if (ctx) ctx.suspend(); // 즉시 무음(엔진/효과음·배경음악은 syncAudio 가 함께 정지)
-    // 수동 일시정지에서만 타이틀 일러스트 복귀 화면 + 순위표를 띄운다(자동 정지는 화면을 그대로 멈춤).
-    if (!game.autoPaused && pauseScreenEl) { pauseScreenEl.classList.remove('hidden'); showLeaderboard(true); }
+    // 수동 일시정지에서만 타이틀 일러스트 복귀 화면을 띄운다(순위표는 띄우지 않음).
+    if (!game.autoPaused && pauseScreenEl) pauseScreenEl.classList.remove('hidden');
   } else {
     if (pauseScreenEl) pauseScreenEl.classList.add('hidden'); // 복귀 → 일러스트 숨김(카운트다운 노출)
-    showLeaderboard(false);
     game.autoPaused = false;  // 재개 시 자동정지 플래그 해제
     beginCountdown();        // 재개도 3-2-1 후 출발
     // iOS: AudioContext.resume() 은 반드시 사용자 제스처(이 클릭) 안에서 호출해야 한다.

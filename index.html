@@ -106,7 +106,7 @@
       text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
       pointer-events: none;
       user-select: none;
-      z-index: 5;
+      z-index: 21;     /* Hall of Fame 배경(z20) 위로 보이도록 */
     }
     #credit b { color: #ff6a3d; font-weight: 700; }
 
@@ -1067,19 +1067,19 @@
     }
     .hof-actions {
       position: absolute;
-      bottom: 26px;
+      bottom: 54px;                  /* 하단 크레딧을 가리지 않도록 위로 */
       left: 50%;
       transform: translateX(-50%);
       display: flex;
-      gap: 18px;
+      gap: 14px;
       pointer-events: auto;
     }
     .hof-actions button {
-      padding: 14px 34px;
-      font-size: 18px;
+      padding: 10px 24px;
+      font-size: 14px;
       font-weight: 800;
-      letter-spacing: 0.1em;
-      border-radius: 12px;
+      letter-spacing: 0.08em;
+      border-radius: 10px;
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
       transition: transform 0.08s ease;
@@ -1087,7 +1087,7 @@
     .hof-actions button:active { transform: translateY(1px); }
     #godash-btn { color: #fff; background: #ff6a3d; border: none; box-shadow: 0 6px 22px rgba(255, 106, 61, 0.4); }
     #back-select-btn { color: #ffd9c7; background: rgba(20, 23, 28, 0.5); border: 1px solid rgba(255, 106, 61, 0.7); }
-    body.mobile .hof-actions button { padding: 12px 22px; font-size: 15px; }
+    body.mobile .hof-actions button { padding: 9px 18px; font-size: 13px; }
 
     /* 아이템 획득 연출(확대 후 HUD 로 날아감) */
     .item-fly {
@@ -1121,12 +1121,14 @@
     #pause-actions {
       position: absolute;
       left: 50%;
-      top: 50%;                       /* 화면 세로 중앙 */
-      transform: translate(-50%, -50%);
+      bottom: 26px;                   /* 화면 하단(일러스트를 가리지 않게) */
+      transform: translateX(-50%);
       display: flex;
-      gap: 16px;
+      gap: 14px;
       z-index: 3;
     }
+    /* 일시정지 버튼은 작게(하단 배치) */
+    #pause-actions .ps-btn { padding: 10px 22px; font-size: clamp(13px, 1.6vw, 16px); }
     .ps-btn {
       padding: 13px 30px;
       font-family: "Segoe UI", system-ui, sans-serif;
