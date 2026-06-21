@@ -857,9 +857,10 @@ const COCKPIT_FWD_RATIO = 0.10; // 차 중심 기준 조종석의 전방 위치(
 
 // 미니맵(화면 중앙 상단): 조종석 전방 시점. 가로:세로 = 2.5:1.
 // 픽셀 크기·여백은 index.html 의 #minimap 프레임과 일치시킨다.
-const MINIMAP_W = 320;          // 미니맵 너비(px)
-const MINIMAP_H = 154;          // 미니맵 높이(px) — 상하 1.2배(128→154)
-const MINIMAP_MARGIN = 16;      // 화면 상단 여백(px)
+// 작은 창: 모바일은 작게(60%)·좌측 정렬, 데스크탑은 원래 크기(320×154)·가운데.
+const MINIMAP_W = IS_MOBILE ? 192 : 320;   // 너비(px)
+const MINIMAP_H = IS_MOBILE ? 92 : 154;    // 높이(px)
+const MINIMAP_MARGIN = 16;      // 화면 가장자리 여백(px)
 const MINIMAP_LAYER = 1;        // 조종석 카메라 전용 마커 레이어(메인 화면은 무시)
 const MINIMAP_OPACITY = 0.75;   // 작은 창 합성 불투명도(뒤 전체화면이 25% 비침)
 // 작은 창을 75% 불투명도로 합성하기 위한 오프스크린 타깃 + 전체화면 위 오버레이 쿼드.
@@ -1382,9 +1383,11 @@ function buildTrack(radius, roadHalfWidth) {
   ckGeo.computeVertexNormals();
   const checker = new THREE.Mesh(ckGeo, new THREE.MeshStandardMaterial({
     vertexColors: true, roughness: 0.7, metalness: 0.0, side: THREE.DoubleSide,
+    emissive: 0xffffff, emissiveIntensity: 0, // 마지막 랩에 반짝이게(평소 0)
   }));
   checker.receiveShadow = true;
   scene.add(checker);
+  finishChecker = checker; // 결승선 체커(마지막 랩 반짝임용)
 }
 
 // ---------------------------------------------------------------------------
@@ -1992,7 +1995,10 @@ function respawnTraffic() {
 // 1바퀴당 2개. 획득 시 크게 확대→HUD 로 날아가 적용.
 const items = []; // { type, mesh, u, lateral, bobT, spin } — 트랙에 한 번에 하나만 존재
 let itemSpeed = 0, itemCollectDist = 0, itemFloatY = 0;
-let lapProgress = 0;                 // 차가 실제로 돈 바퀴 수(누적)
+let lapProgress = 0;                 // 차가 실제로 돈 바퀴 수(누적) — 아이템 생성용
+let finishChecker = null;            // 결승선 체커 메시(마지막 랩 반짝임)
+let prevLapU = 0;                    // 직전 프레임 drive.u — 시작선(u=0) 통과 감지
+let checkerBlinkT = 0;               // 체커 반짝임 위상
 let energyMark = 0, diamondMark = 0; // 다음 생성 기준(에너지·다이아 각각 1바퀴마다 1개)
 const itemTemplates = {};            // type -> { geo, mat } (모든 인스턴스가 공유)
 const _proj = new THREE.Vector3();
@@ -2491,8 +2497,7 @@ function drawTrackmap() {
 // ---------------------------------------------------------------------------
 // 점수 / 게임오버
 // ---------------------------------------------------------------------------
-const game = { score: 0, sec: 0, diamonds: MAX_DIAMONDS, energy: 100, best: 0, over: false, paused: false, autoPaused: false, frozen: false, started: false, grace: 0, countdown: 0, cdShown: 0, pendingOver: false, raceTime: 0, lapClock: 0, lap: 0, finished: false, finishing: false };
-const lapTimes = [];            // 완료한 각 랩의 기록(초)
+const game = { score: 0, sec: 0, diamonds: MAX_DIAMONDS, energy: 100, best: 0, over: false, paused: false, autoPaused: false, frozen: false, started: false, grace: 0, countdown: 0, cdShown: 0, pendingOver: false, raceTime: 0, lapClock: 0, lap: 0, finished: false, finishing: false, bestLap: 0, bestLapNum: 0 };
 const scoreValEl = document.getElementById('score-val');
 const bestValEl = document.getElementById('best-val');
 const diamondsEl = document.getElementById('diamonds');
@@ -2577,9 +2582,11 @@ function startGame() {
   game.started = true;
   // 레이스 상태 초기화(20랩)
   game.raceTime = 0; game.lapClock = 0; game.lap = 0; game.finished = false; game.finishing = false;
-  fwActive = false;
-  lapTimes.length = 0; lapProgress = 0; energyMark = 0; diamondMark = 0;
-  updateLapList(); updateRaceHud();
+  game.bestLap = 0; game.bestLapNum = 0; fwActive = false;
+  lapProgress = 0; energyMark = 0; diamondMark = 0;
+  prevLapU = drive.u; checkerBlinkT = 0;
+  if (finishChecker) finishChecker.material.emissiveIntensity = 0;
+  updateBestLap(); updateRaceHud();
   document.body.classList.remove('titlescreen'); // 게임 HUD 노출
   if (titleScreenEl) titleScreenEl.classList.add('hidden');
   if (howtoScreenEl) howtoScreenEl.classList.add('hidden');
@@ -2912,9 +2919,11 @@ function returnToTitle() {
   game.over = false; game.paused = false; game.autoPaused = false; game.frozen = false;
   game.started = false; game.grace = 0; game.countdown = 0; game.cdShown = 0; game.pendingOver = false;
   game.raceTime = 0; game.lapClock = 0; game.lap = 0; game.finished = false; game.finishing = false;
-  fwActive = false; lapTimes.length = 0;
+  game.bestLap = 0; game.bestLapNum = 0; fwActive = false;
+  prevLapU = 0; checkerBlinkT = 0;
+  if (finishChecker) finishChecker.material.emissiveIntensity = 0;
   if (scoreValEl) scoreValEl.textContent = '0';
-  updateDiamonds(); updateEnergy(); updateLapList(); updateRaceHud();
+  updateDiamonds(); updateEnergy(); updateBestLap(); updateRaceHud();
   if (pauseBtn) pauseBtn.textContent = '⏸';
 
   // 주행 상태를 시작점으로 리셋
@@ -3006,19 +3015,19 @@ function gameOver() {
 // ---------------------------------------------------------------------------
 // 랩(20바퀴) 레이스: 안내 배너 / 랩 타임 / 완주
 // ---------------------------------------------------------------------------
-// 시간 포맷: m' ss" .mmm  (1 millisec = .001)
+// 시간 포맷: m'ss".mmm  (1 millisec = .001)
 function fmtLap(t) {
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60);
   const ms = Math.floor((t - Math.floor(t)) * 1000);
-  return `${m}' ${String(s).padStart(2, '0')}" .${String(ms).padStart(3, '0')}`;
+  return `${m}'${String(s).padStart(2, '0')}".${String(ms).padStart(3, '0')}`;
 }
 function fmtTime(t) { // 결과용: m:ss.d
   const m = Math.floor(t / 60), s = Math.floor(t % 60), d = Math.floor((t * 10) % 10);
   return `${m}:${String(s).padStart(2, '0')}.${d}`;
 }
 const curLapEl = document.getElementById('cur-lap');
-const lapListEl = document.getElementById('lap-list');
+const bestLapEl = document.getElementById('best-lap');
 const lapValEl = document.getElementById('lap-val');
 const finishEl = document.getElementById('finish');
 const finScoreEl = document.getElementById('fin-score');
@@ -3042,12 +3051,12 @@ function announce(text, strong) {
   ], { duration: 2200, easing: 'ease-out', fill: 'forwards' });
   anim.onfinish = () => el.remove();
 }
-// 완료한 랩 기록 목록 갱신(우측 상단)
-function updateLapList() {
-  if (!lapListEl) return;
-  lapListEl.innerHTML = lapTimes
-    .map((t, i) => `<div class="lt-item">Lap ${i + 1}:<b>${fmtLap(t)}</b></div>`)
-    .join('');
+// 베스트 랩 표시 갱신: best(k-lap): m'ss".mmm
+function updateBestLap() {
+  if (!bestLapEl) return;
+  bestLapEl.textContent = game.bestLap > 0
+    ? `best(${game.bestLapNum}-lap): ${fmtLap(game.bestLap)}`
+    : 'best: -';
 }
 // 매 프레임: 현재 랩 경과시간 + 현재 랩 번호 HUD 갱신
 function updateRaceHud() {
@@ -3057,16 +3066,19 @@ function updateRaceHud() {
   }
   if (lapValEl) lapValEl.textContent = Math.min(TOTAL_LAPS, game.lap + 1);
 }
-// 한 바퀴(결승선 통과)마다: 랩 기록 저장 + 안내. 20랩 완료 시 완주 처리.
+// 한 바퀴 = 시작선(u=0, 체커가 시작되는 지점) 통과. 거기서 랩 시간이 끝나고 다음 랩이 시작된다.
 function checkLap() {
-  if (game.finished) return;
-  const done = Math.floor(lapProgress);
-  if (done > game.lap) {
-    // 직전 랩 기록 확정(여러 랩이 한 프레임에 넘어가도 안전하게 1개만 처리)
-    lapTimes.push(game.lapClock);
-    game.lapClock = 0;
-    game.lap = done;
-    updateLapList();
+  if (game.finished) { prevLapU = drive.u; return; }
+  // 전진하다 u 가 1→0 으로 감기면(시작선 통과) 한 랩 완료.
+  if (prevLapU - drive.u > 0.5) {
+    game.lap += 1;
+    const done = game.lap;
+    if (game.bestLap === 0 || game.lapClock < game.bestLap) {
+      game.bestLap = game.lapClock;
+      game.bestLapNum = done;
+    }
+    game.lapClock = 0;  // 다음 랩 시간 측정 시작
+    updateBestLap();
     if (done >= TOTAL_LAPS) {
       announce('FINISH', true);
       finishRace();
@@ -3075,6 +3087,7 @@ function checkLap() {
       announce(remaining === 1 ? 'FINAL LAP!' : `${remaining} Laps to Go`, remaining === 1);
     }
   }
+  prevLapU = drive.u;
 }
 // 20랩 완주 → 곧장 멈추지 않고 '완주 마무리' 모드로. 차는 서서히 감속하며 연석으로 붙고
 // 축포가 터진다(drive 루프가 처리). 거의 멈추면 finishStop() 가 결과 화면을 띄운다.
@@ -3094,7 +3107,7 @@ function finishStop() {
   if (ctx) ctx.suspend();        // 엔진 정지(배경음악은 유지)
   if (finScoreEl) finScoreEl.textContent = game.score;
   if (finTimeEl) finTimeEl.textContent = fmtTime(game.raceTime);
-  if (finBestEl && lapTimes.length) finBestEl.textContent = fmtLap(Math.min(...lapTimes));
+  if (finBestEl && game.bestLap > 0) finBestEl.textContent = `${fmtLap(game.bestLap)} (lap ${game.bestLapNum})`;
   if (finishEl) finishEl.classList.remove('hidden');
 }
 
@@ -3423,7 +3436,19 @@ function animate() {
   // 충돌 스파크 + 사람(걷기/뛰기) 갱신. 사람은 실제 렌더되는 카메라(체이스/조종석) 시야
   // 밖이면서 먼 경우 스켈레톤 갱신을 건너뛴다(직전 프레임 카메라 행렬 기준 — 1프레임 지연 무시 가능).
   _peopleCams[0] = camera; _peopleCams[1] = miniCam;
-  if (!game.paused) { updateSparks(dt); updatePeople(dt, _peopleCams); updateFireworks(dt); }
+  if (!game.paused) {
+    updateSparks(dt); updatePeople(dt, _peopleCams); updateFireworks(dt);
+    // 마지막 랩 동안 결승선 체커가 반짝이며 기다린다(완주하면 멈춤).
+    if (finishChecker) {
+      const finalLap = game.started && !game.finished && game.lap === TOTAL_LAPS - 1;
+      if (finalLap) {
+        checkerBlinkT += dt;
+        finishChecker.material.emissiveIntensity = (Math.sin(checkerBlinkT * 7) * 0.5 + 0.5) * 1.1;
+      } else if (finishChecker.material.emissiveIntensity !== 0) {
+        finishChecker.material.emissiveIntensity = 0;
+      }
+    }
+  }
 
   // 체이스 카메라 롤/피치: 차 위치의 노면 법선 쪽으로 up 을 기울인다(부드럽게 보간).
   // OrbitControls.update() 가 이 up 으로 타깃을 바라보며 수평선이 노면 따라 기운다.
@@ -3544,7 +3569,7 @@ function animate() {
   if (cockpitReady && !collisionView) {
     const smallCam = swapped ? camera : miniCam;
     smallCam.aspect = smallAspect; smallCam.updateProjectionMatrix();
-    const mx = (w - MINIMAP_W) / 2;               // 화면 중앙(가로)
+    const mx = IS_MOBILE ? MINIMAP_MARGIN : (w - MINIMAP_W) / 2; // 모바일=좌측, 데스크탑=가운데
     const my = h - MINIMAP_H - MINIMAP_MARGIN;    // 뷰포트 원점은 좌하단 → 상단 배치
 
     // 1) 작은 시점을 오프스크린 타깃에 렌더(알파=1로 채워 오버레이가 사라지지 않게).

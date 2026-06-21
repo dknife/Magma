@@ -114,7 +114,7 @@
     #minimap {
       position: fixed;
       top: 16px;
-      left: 50%;
+      left: 50%;                    /* 데스크탑: 가운데 */
       transform: translateX(-50%);
       width: 320px;
       height: 154px;
@@ -246,10 +246,9 @@
       z-index: 6;
       text-shadow: 0 1px 6px rgba(0, 0, 0, 0.75);
     }
-    #laptimes .lt-head { font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 6px; }
-    #laptimes .lt-head b { color: #5fd0ff; }
-    #laptimes #lap-list { font-size: 13px; line-height: 1.55; color: #aab2bd; }
-    #laptimes #lap-list .lt-item b { color: #7CFC6A; margin-left: 4px; }
+    #laptimes .lt-head { font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    #laptimes .lt-head b { color: #5fd0ff; font-weight: 800; }
+    #laptimes .lt-best { font-size: 14px; font-weight: 800; color: #ffd24a; }
 
     /* cockpit 뷰 중앙 일시정지 버튼 */
     #pause-btn {
@@ -384,6 +383,14 @@
          0    0   3px rgba(0, 0, 0, 0.9);
       pointer-events: none;
       white-space: nowrap;
+    }
+
+    /* 모바일: 작은 창을 60% 크기로 좌측 정렬(우측 상단 랩 기록과 겹치지 않게) */
+    body.mobile #minimap {
+      left: 16px;
+      transform: none;
+      width: 192px;
+      height: 92px;
     }
 
     /* 모바일: Score/Best/다이아몬드를 조종석 작은 창 안(안내문 아래)에 표시 */
@@ -1145,10 +1152,10 @@
   <div id="score">SCORE<b id="score-val">0</b><span class="best">BEST<b id="best-val">0</b></span><span class="lap">LAP<b id="lap-val">1</b>/20</span></div>
   <div id="diamonds">◆◆◆◆◆</div>
 
-  <!-- 랩 타임(우측 상단): 상단=현재랩 경과시간(큰 글씨), 아래=완료한 랩별 기록 -->
+  <!-- 랩 타임(우측 상단): 현재랩 경과시간 + 베스트 랩만 표시 -->
   <div id="laptimes">
-    <div id="cur-lap" class="lt-head">현재랩 0' 00" .000</div>
-    <div id="lap-list"></div>
+    <div id="cur-lap" class="lt-head">현재랩 0'00".000</div>
+    <div id="best-lap" class="lt-best">best: -</div>
   </div>
 
   <!-- 에너지 게이지(화면 중앙 상단): 10칸(빨강→초록→파랑) + 상단 % 표시. 0%면 게임오버 -->
