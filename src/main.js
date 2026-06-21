@@ -40,8 +40,8 @@ const PEOPLE_RUN_URLS = [
   './meshes/womanRun.opt.glb',
   './meshes/racerRun.opt.glb',
 ];
-const PEOPLE_WALK_COUNT = 18;                       // 종류당 걷는 사람 수(3배)
-const PEOPLE_RUN_COUNT = 15;                        // 종류당 뛰는 사람 수(3배)
+const PEOPLE_WALK_COUNT = 4;                        // Hall of Fame 군중: 종류당 걷는 사람 수
+const PEOPLE_RUN_COUNT = 6;                         // Hall of Fame 군중: 종류당 뛰는 사람 수
 const CLOUD_COUNT = 18;                             // 하늘에 띄울 뭉게구름 수
 const TOYOTA_SPEED_MIN = 0.8;                       // 교통차 속도(주인공 대비) 하한
 const TOYOTA_SPEED_MAX = 0.95;                      // 교통차 속도(주인공 대비) 상한 — 차마다 0.8~0.95 랜덤(주인공보다 느림)
@@ -1567,105 +1567,78 @@ function loadTrees(roadHalfWidth, trackRadius) {
 // (스킨드 메시라 독립 스켈레톤 필요) 여러 개 복제한다. 각 개체는 트랙 곡선을 따라(교통차와
 // 같은 방식) 도로 가장자리 바로 바깥을 걷거나 뛰며, 진행(접선) 방향을 바라보도록 회전한다.
 // → 주행 중 도로변에서 가까이 지나치므로 또렷이 보인다.
-const people = []; // { mixer, rig, u, du, lat }
-// 사람 모델의 정면 보정. 정면 = 진행 방향(0). 뒷걸음으로 보이면 Math.PI 로 바꾼다.
-const PEOPLE_YAW_OFFSET = 0;
-// 사람 애니메이션 컬링용: 카메라 절두체 밖이면서 차에서 먼 사람은 스켈레톤 갱신을 생략한다.
-// (Three.js 는 '렌더링'만 절두체 컬링하고, 스켈레톤 mixer 갱신은 화면 밖이라도 계속 돈다.)
-const _frustums = [new THREE.Frustum(), new THREE.Frustum()]; // 체이스 + 조종석 카메라용
-const _peopleCams = [null, null]; // 매 프레임 [camera, miniCam] 으로 갱신(재할당 없이 재사용)
-const _cullMat = new THREE.Matrix4();
-const _cullSphere = new THREE.Sphere(new THREE.Vector3(), 1);
-let cullSphereR = 1;   // 사람 1인 바운딩 반경(절두체 판정 여유) — 모델 로드 후 설정
-let cullNearR2 = 0;    // 이 거리(제곱) 안의 사람은 시야와 무관하게 항상 애니메이션 — 로드 후 설정
+// Hall of Fame 군중: 사람들이 차 뒤쪽에서 카메라(앞)로 달려/걸어 나오며 좌우로 흩어진다.
+// (인게임 도로변 사람은 제외 — 계산만 들고 시각 효과가 약했음.)
+const people = []; // { mixer, wrap, speed, s, latRate, lat0 }
+const PEOPLE_YAW_OFFSET = 0; // 모델 정면 보정(정면=진행방향)
+let hofPeopleGroup = null;   // 쇼케이스(HoF) 씬에 추가되는 사람 그룹
+let hofActive = false;       // Hall of Fame 장면 활성 여부
+let hofMaxDim = 1;           // 사람 이동 스케일 기준(차 maxDim)
+const _hofFwd = new THREE.Vector3(), _hofSide = new THREE.Vector3(), _hofDir = new THREE.Vector3();
 
-function loadPeople(refSize, roadHalfWidth) {
-  const targetH = refSize.y * 3.6;         // 사람 키(2.4에서 1.5배로 키움)
-  const maxDim = Math.max(refSize.x, refSize.y, refSize.z);
-  for (const url of PEOPLE_WALK_URLS) spawnPeopleType(url, PEOPLE_WALK_COUNT, targetH, roadHalfWidth, maxDim * 1.3, 'walk');
-  for (const url of PEOPLE_RUN_URLS) spawnPeopleType(url, PEOPLE_RUN_COUNT, targetH, roadHalfWidth, maxDim * 3, 'run');
+function loadPeople(refSize) {
+  hofMaxDim = Math.max(refSize.x, refSize.y, refSize.z) || 1;
+  const targetH = refSize.y * 3.6; // 사람 키
+  for (const url of PEOPLE_WALK_URLS) spawnPeopleType(url, PEOPLE_WALK_COUNT, targetH, hofMaxDim * 0.9);
+  for (const url of PEOPLE_RUN_URLS) spawnPeopleType(url, PEOPLE_RUN_COUNT, targetH, hofMaxDim * 1.7);
 }
 
-function spawnPeopleType(url, count, targetH, roadHalfWidth, baseSpeed, kind) {
+function spawnPeopleType(url, count, targetH, baseSpeed) {
   gltfLoader.load(
     url,
     (gltf) => {
       const proto = gltf.scene;
       proto.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
-      // 키를 targetH 로 맞추는 스케일(원본 높이 기준).
       const size = new THREE.Box3().setFromObject(proto).getSize(new THREE.Vector3());
       const s = targetH / (size.y || 1);
-      const clip = gltf.animations[0]; // 파일당 클립 1개(walking_man / running)
-      const len = drive.length || 1;
-
+      const clip = gltf.animations[0];
       for (let i = 0; i < count; i++) {
-        const root = cloneSkinned(proto); // 스킨드 메시는 SkeletonUtils 로 복제(스켈레톤 독립)
+        const root = cloneSkinned(proto); // 스킨드 메시는 SkeletonUtils 로 복제(독립 스켈레톤)
         root.scale.setScalar(s);
         const cbox = new THREE.Box3().setFromObject(root);
-        root.position.y = -cbox.min.y;    // 발이 y=0 에 닿도록 안착
-
-        const rig = new THREE.Group();    // 곡선 위 위치·진행 방향을 담당
-        rig.add(root);
-        scene.add(rig);
-
+        root.position.y = -cbox.min.y;    // 발이 y=0 에 닿도록
+        const wrap = new THREE.Group();
+        wrap.add(root);
+        if (hofPeopleGroup) hofPeopleGroup.add(wrap);
         const mixer = new THREE.AnimationMixer(root);
         const action = mixer.clipAction(clip);
         action.timeScale = 0.85 + Math.random() * 0.4; // 개체별 보폭 변주
         action.play();
-
-        // 도로 가장자리 바로 바깥(좌/우 무작위)에 배치. 진행 방향(시계/반시계)·속도 변주.
-        const side = Math.random() < 0.5 ? 1 : -1;
-        const lat = side * roadHalfWidth * (1.6 + Math.random() * 2.0); // 도로 밖 여유
-        const dir = Math.random() < 0.5 ? 1 : -1;
-        const v = baseSpeed * (0.8 + Math.random() * 0.4);
-        people.push({ mixer, rig, u: i / count + Math.random() * 0.02, du: (dir * v) / len, lat });
+        const p = { mixer, wrap, speed: baseSpeed * (0.8 + Math.random() * 0.5) };
+        respawnHofPerson(p, true);
+        people.push(p);
       }
-      console.log(`[People] ${kind} ${count}명 배치(도로변 lat≈${roadHalfWidth.toFixed(1)}×)`);
     },
     undefined,
     (err) => console.error(`[People] 로드 실패(${url}):`, err)
   );
 }
 
-// 매 프레임: 애니메이션 갱신 + 트랙 곡선을 따라 이동 + 진행 방향으로 회전.
-// cams: 이번 프레임에 실제로 그려지는 카메라들(체이스/조종석). 이들 시야 밖이면서
-// 차에서도 먼 사람은 스켈레톤 갱신(고비용)을 생략해 성능을 아낀다.
-function updatePeople(dt, cams) {
-  if (!drive.curve) return;
-  // 충돌 후 스핀·주행선 복귀 중에는 사람을 렌더링하지 않는다.
-  // (제어를 잃고 주행선으로 되돌아오는 동안 도로변 사람과 부딪히는 장면 방지)
-  const hidePeople = drive.state !== 'drive';
-  // 렌더되는 카메라들의 절두체를 미리 계산(사람마다 재계산하지 않도록).
-  let nf = 0;
-  for (const cam of cams) {
-    if (!cam || nf >= _frustums.length) continue;
-    _cullMat.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
-    _frustums[nf].setFromProjectionMatrix(_cullMat);
-    nf++;
-  }
+// 한 명을 뒤쪽에서 다시 출발(initial=경로 곳곳에 미리 분산 배치).
+function respawnHofPerson(p, initial) {
+  const back = hofMaxDim * 3.5;
+  p.s = initial ? (-back + Math.random() * (back + hofMaxDim * 2.4)) : -back;
+  p.latRate = (Math.random() * 2 - 1) * 0.9;      // 앞으로 갈수록 좌우로 벌어지는 기울기
+  p.lat0 = (Math.random() * 2 - 1) * hofMaxDim * 0.5;
+}
+function resetHofPeople() { for (const p of people) respawnHofPerson(p, true); }
+
+// HoF 활성 시: 차 뒤(-fwd)에서 카메라(앞,+fwd)로 이동하며 lat 으로 좌우 분산. 끝까지 가면 재출발.
+function updateHofPeople(dt) {
+  if (!hofPeopleGroup) return;
+  if (hofPeopleGroup.visible !== hofActive) hofPeopleGroup.visible = hofActive;
+  if (!hofActive || !showcaseCam) return;
+  _hofFwd.set(showcaseCam.position.x, 0, showcaseCam.position.z).normalize(); // 앞(카메라 쪽)
+  _hofSide.set(-_hofFwd.z, 0, _hofFwd.x);                                     // 옆(바닥 평면)
+  const back = hofMaxDim * 3.5, front = hofMaxDim * 2.8;
   for (const p of people) {
-    if (p.rig.visible === hidePeople) p.rig.visible = !hidePeople;
-    if (hidePeople) continue;            // 숨김 중엔 애니메이션·이동도 멈춰 둔다
-    // 위치·방향은 항상 갱신(저비용) → 컬링 판정이 정확하고, 재등장 시 위치가 튀지 않는다.
-    p.u = (p.u + p.du * dt + 1) % 1;
-    drive.curve.getPointAt(p.u, _pos);
-    drive.curve.getTangentAt(p.u, _tan);
-    _lat.crossVectors(_up, _tan).normalize();         // 도로 횡방향 단위벡터
-    { const ex = _pos.x + _lat.x * p.lat, ez = _pos.z + _lat.z * p.lat;
-      p.rig.position.set(ex, terrainHeight(ex, ez), ez); } // 지형 위
-    // 진행(접선) 방향을 바라보게: 이동 방향 = sign(du)·접선
-    const sgn = p.du >= 0 ? 1 : -1;
-    p.rig.rotation.y = Math.atan2(sgn * _tan.x, sgn * _tan.z) + PEOPLE_YAW_OFFSET;
-    // 스켈레톤 애니메이션(고비용)은 근거리이거나 카메라 시야 안일 때만 갱신.
-    const dx = p.rig.position.x - car.position.x;
-    const dz = p.rig.position.z - car.position.z;
-    let animateThis = dx * dx + dz * dz < cullNearR2;
-    if (!animateThis) {
-      _cullSphere.center.copy(p.rig.position);
-      _cullSphere.radius = cullSphereR;
-      for (let k = 0; k < nf; k++) { if (_frustums[k].intersectsSphere(_cullSphere)) { animateThis = true; break; } }
-    }
-    if (animateThis) p.mixer.update(dt);
+    p.s += p.speed * dt;
+    if (p.s > front) respawnHofPerson(p, false);
+    const lat = p.lat0 + p.latRate * (p.s + back);
+    p.wrap.position.set(_hofFwd.x * p.s + _hofSide.x * lat, 0, _hofFwd.z * p.s + _hofSide.z * lat);
+    _hofDir.set(_hofFwd.x + _hofSide.x * p.latRate, 0, _hofFwd.z + _hofSide.z * p.latRate); // 이동 방향
+    p.wrap.rotation.y = Math.atan2(_hofDir.x, _hofDir.z) + PEOPLE_YAW_OFFSET;
+    p.mixer.update(dt);
   }
 }
 
@@ -2173,8 +2146,8 @@ gltfLoader.load(
     // 이미 정규화된 Genesis(주인공)를 프로토타입으로 함께 넘긴다.
     loadTraffic({ model, size }, size, TOYOTA_COUNT);
 
-    // 사람(걷기/뛰기)을 트랙 곡선을 따라 도로변에 배치해 트랙 주변을 돌게 함
-    loadPeople(size, roadHalfWidth);
+    // 사람(걷기/뛰기) 모델 로드 → Hall of Fame 장면용 군중으로 사용(인게임 배치 안 함)
+    loadPeople(size);
 
     // 속도: 다시 2배(직선 maxDim*72). 코너는 크게 감속.
     drive.maxSpeed = maxDim * 56;            // 직선 최고 속도(이전 70의 80%로 감속)
@@ -2252,10 +2225,6 @@ gltfLoader.load(
     headlightFlashDist = maxDim * 10; // 이 거리 안으로 앞차를 따라잡으면 섬광
     markerNearDist = maxDim * 8;      // 이 거리 안의 상대 차는 마커가 노랑으로 깜빡임
 
-    // 사람 애니메이션 컬링 반경(차 크기 비례)
-    cullSphereR = maxDim;             // 사람 1인 절두체 판정용 바운딩 반경(여유 포함)
-    cullNearR2 = (maxDim * 10) ** 2;  // 차 주변 10 차길이 안은 항상 애니메이션
-
     // 카메라 상하 진동 진폭(차 크기에 비례) — 높이 60% 수준에 맞춰 축소
     camFollow.bobAmp = maxDim * 0.78;
     // 추격 거리: 차 길이(size.x) 기준 고정. 모바일은 조금 더 멀리(4배)서 관찰.
@@ -2331,6 +2300,10 @@ gltfLoader.load(
     // 차만 회전하는 턴테이블(조명은 고정)
     showcaseSpinner = new THREE.Group();
     showcaseScene.add(showcaseSpinner);
+    // Hall of Fame 군중 그룹(평소 숨김 → HoF 에서만 표시)
+    hofPeopleGroup = new THREE.Group();
+    hofPeopleGroup.visible = false;
+    showcaseScene.add(hofPeopleGroup);
     // 고정 관찰 카메라(더 가깝게, 약간 위에서 아래로 내려다봄)
     showcaseCam = new THREE.PerspectiveCamera(42, 1, maxDim * 0.1, maxDim * 80);
     showcaseCam.position.set(maxDim * 1.35, maxDim * 0.9, maxDim * 1.8); // 근접 + 약간 높은 시점(조금 낮춤)
@@ -2597,11 +2570,13 @@ function goToHallOfFame() {
   if (titleScreenEl) titleScreenEl.classList.add('hidden');
   if (hofEl) hofEl.classList.remove('hidden');
   showLeaderboard(true);
+  hofActive = true; resetHofPeople();   // 군중이 뒤에서 앞으로 달려 나오기 시작
 }
 // Back To Select: 다시 차량 선택 화면으로
 function backToSelect() {
   if (hofEl) hofEl.classList.add('hidden');
   showLeaderboard(false);
+  hofActive = false;
   if (titleScreenEl) titleScreenEl.classList.remove('hidden');
 }
 onTap(startBtn, goToHallOfFame);
@@ -2642,6 +2617,7 @@ function startGame() {
   }
   showLeaderboard(false);                         // 게임 중에는 순위표 숨김
   if (hofEl) hofEl.classList.add('hidden');        // Hall of Fame 닫기
+  hofActive = false;
   game.started = true;
   // 레이스 상태 초기화(20랩)
   game.raceTime = 0; game.lapClock = 0; game.lap = 0; game.finished = false; game.finishing = false;
@@ -3018,6 +2994,7 @@ function returnToTitle() {
   if (confirmEl) confirmEl.classList.add('hidden');
   if (finishEl) finishEl.classList.add('hidden');
   if (hofEl) hofEl.classList.add('hidden');   // Hall of Fame 닫고 차량 선택으로
+  hofActive = false;
   showLeaderboard(false);
   if (titleScreenEl) titleScreenEl.classList.remove('hidden');
   document.body.classList.add('titlescreen');
@@ -3552,11 +3529,9 @@ function animate() {
     updateRaceHud();
   }
 
-  // 충돌 스파크 + 사람(걷기/뛰기) 갱신. 사람은 실제 렌더되는 카메라(체이스/조종석) 시야
-  // 밖이면서 먼 경우 스켈레톤 갱신을 건너뛴다(직전 프레임 카메라 행렬 기준 — 1프레임 지연 무시 가능).
-  _peopleCams[0] = camera; _peopleCams[1] = miniCam;
+  // 충돌 스파크 / 축포 / Hall of Fame 군중 갱신
   if (!game.paused) {
-    updateSparks(dt); updatePeople(dt, _peopleCams); updateFireworks(dt);
+    updateSparks(dt); updateHofPeople(dt); updateFireworks(dt);
     // 마지막 랩 동안 결승선 체커가 반짝이며 기다린다(완주하면 멈춤).
     if (finishChecker) {
       const finalLap = game.started && !game.finished && game.lap === TOTAL_LAPS - 1;
