@@ -1763,87 +1763,72 @@ function updateSparks(dt) {
 }
 
 // ---------------------------------------------------------------------------
-// 축포(불꽃놀이) — 완주 축하용. 하늘에서 구형으로 터지는 컬러 파티클.
+// 축포(불꽃놀이) — 완주 축하용. 게임(3D) 좌표가 아니라 UI(화면) 좌표계의 2D 캔버스에서
+// 터져 카메라 위치와 무관하게 항상 잘 보인다.
 // ---------------------------------------------------------------------------
-let fwSystem = null, fwGravity = 0, fwBurstSpeed = 0, fwSpawnY = 0, fwSpread = 0;
+const fxCanvas = document.getElementById('fx-fireworks');
+const fxCtx = fxCanvas ? fxCanvas.getContext('2d') : null;
+let fxW = 0, fxH = 0;
+const fxParticles = []; // { x, y, vx, vy, life, maxLife, hue, size }
 let fwActive = false, fwTimer = 0;
-function initFireworks(maxDim) {
-  const COUNT = 900;
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(COUNT * 3), 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(COUNT * 3), 3));
-  const mat = new THREE.PointsMaterial({
-    size: maxDim * 0.22, vertexColors: true, transparent: true,
-    depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
-  });
-  const points = new THREE.Points(geo, mat);
-  points.frustumCulled = false;
-  scene.add(points);
-  const data = [];
-  for (let i = 0; i < COUNT; i++) data.push({ vx: 0, vy: 0, vz: 0, life: 0, maxLife: 1, r: 1, g: 1, b: 1 });
-  fwSystem = { posAttr: geo.attributes.position, colAttr: geo.attributes.color, data };
-  fwGravity = maxDim * 9;
-  fwBurstSpeed = maxDim * 7;
-  fwSpawnY = maxDim * 8;       // 폭발 높이(차 위로)
-  fwSpread = maxDim * 10;      // 폭발 위치 좌우 분산
+function resizeFireworks() {
+  if (!fxCanvas) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  fxW = window.innerWidth; fxH = window.innerHeight;
+  fxCanvas.width = Math.round(fxW * dpr);
+  fxCanvas.height = Math.round(fxH * dpr);
+  if (fxCtx) fxCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-// (x,y,z)에서 한 발 터뜨린다(무작위 밝은 색, 구형 분출).
-function launchFirework(x, y, z) {
-  if (!fwSystem) return;
-  const { data, posAttr, colAttr } = fwSystem;
-  const col = new THREE.Color().setHSL(Math.random(), 1.0, 0.6);
-  let spawned = 0;
-  for (let i = 0; i < data.length && spawned < 110; i++) {
-    const p = data[i];
-    if (p.life > 0) continue;
-    p.maxLife = 1.0 + Math.random() * 0.8;
-    p.life = p.maxLife;
-    const th = Math.random() * Math.PI * 2;
-    const ph = Math.acos(2 * Math.random() - 1);
-    const sp = fwBurstSpeed * (0.55 + Math.random() * 0.6);
-    p.vx = Math.sin(ph) * Math.cos(th) * sp;
-    p.vy = Math.cos(ph) * sp;
-    p.vz = Math.sin(ph) * Math.sin(th) * sp;
-    p.r = col.r; p.g = col.g; p.b = col.b;
-    posAttr.setXYZ(i, x, y, z);
-    colAttr.setXYZ(i, col.r, col.g, col.b);
-    spawned++;
+// 화면 좌표 (x,y)에서 한 발 터뜨린다(무작위 밝은 색, 원형 분출).
+function launchFireworkUI(x, y) {
+  const hue = Math.random() * 360;
+  const n = 46 + Math.floor(Math.random() * 40);
+  const base = 70 + Math.random() * 150; // 분출 속도(px/s)
+  for (let i = 0; i < n; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const sp = base * (0.4 + Math.random() * 0.8);
+    fxParticles.push({
+      x, y,
+      vx: Math.cos(ang) * sp,
+      vy: Math.sin(ang) * sp,
+      life: 0.9 + Math.random() * 0.8,
+      maxLife: 1.0,
+      hue: hue + (Math.random() * 36 - 18),
+      size: 1.6 + Math.random() * 2.2,
+    });
+    const p = fxParticles[fxParticles.length - 1]; p.maxLife = p.life;
   }
-  posAttr.needsUpdate = true; colAttr.needsUpdate = true;
 }
-function updateFireworks(dt) {
-  if (!fwSystem) return;
-  // 활성(완주 축하) 동안 주기적으로 차 주변 하늘에서 한 발씩.
+function updateFireworksUI(dt) {
+  if (!fxCtx) return;
+  // 활성(완주 축하) 동안 주기적으로 화면 상단 곳곳에서 한 발씩.
   if (fwActive) {
     fwTimer -= dt;
     if (fwTimer <= 0) {
-      fwTimer = 0.45 + Math.random() * 0.5;
-      launchFirework(
-        car.position.x + (Math.random() * 2 - 1) * fwSpread,
-        car.position.y + fwSpawnY + (Math.random() * 2 - 1) * fwSpread * 0.3,
-        car.position.z + (Math.random() * 2 - 1) * fwSpread
-      );
+      fwTimer = 0.32 + Math.random() * 0.4;
+      launchFireworkUI(fxW * (0.15 + Math.random() * 0.7), fxH * (0.12 + Math.random() * 0.4));
     }
   }
-  const { data, posAttr, colAttr } = fwSystem;
-  let any = false;
-  for (let i = 0; i < data.length; i++) {
-    const p = data[i];
-    if (p.life <= 0) continue;
-    any = true;
+  if (!fxParticles.length && !fwActive) return; // 아무것도 없으면 건너뜀(캔버스 이미 비어 있음)
+  fxCtx.clearRect(0, 0, fxW, fxH);
+  fxCtx.globalCompositeOperation = 'lighter'; // 가산 블렌딩 → 밝은 불꽃
+  const grav = 120; // px/s^2
+  for (let i = fxParticles.length - 1; i >= 0; i--) {
+    const p = fxParticles[i];
     p.life -= dt;
-    if (p.life <= 0) { colAttr.setXYZ(i, 0, 0, 0); posAttr.setXYZ(i, 0, -1e6, 0); continue; }
-    p.vy -= fwGravity * dt;
-    const drag = Math.max(0, 1 - 1.0 * dt);
-    p.vx *= drag; p.vz *= drag;
-    const ix = i * 3;
-    posAttr.array[ix] += p.vx * dt;
-    posAttr.array[ix + 1] += p.vy * dt;
-    posAttr.array[ix + 2] += p.vz * dt;
-    const f = p.life / p.maxLife;               // 점점 어두워지며 사라짐(가산 블렌딩)
-    colAttr.setXYZ(i, p.r * f, p.g * f, p.b * f);
+    if (p.life <= 0) { fxParticles.splice(i, 1); continue; }
+    p.vy += grav * dt;
+    p.vx *= (1 - 0.6 * dt); p.vy *= (1 - 0.6 * dt); // 공기저항
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    const a = p.life / p.maxLife;
+    fxCtx.globalAlpha = a;
+    fxCtx.fillStyle = `hsl(${p.hue}, 100%, ${55 + 15 * a}%)`;
+    fxCtx.beginPath();
+    fxCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    fxCtx.fill();
   }
-  if (any) { posAttr.needsUpdate = true; colAttr.needsUpdate = true; }
+  fxCtx.globalAlpha = 1;
+  fxCtx.globalCompositeOperation = 'source-over';
 }
 
 // ---------------------------------------------------------------------------
@@ -2171,7 +2156,6 @@ gltfLoader.load(
     avoidClearance = maxDim * 1.2; // collisionDist 보다 크게 → 확실히 비켜감
     initSparks(maxDim, size);      // 충돌 스파크 파티클 준비
     initItems(maxDim);             // 게임 아이템(코인/에너지/다이아몬드) 준비
-    initFireworks(maxDim);         // 완주 축하 축포(불꽃놀이) 준비
 
     // 후면 브레이크등(차 로컬 -X = 뒤). 좌/우 2개 + 적색 글로우 라이트.
     brakeMaterial = new THREE.MeshStandardMaterial({
@@ -2356,7 +2340,9 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  resizeFireworks();
 });
+resizeFireworks(); // 축포 캔버스 초기 크기
 
 // 속도계: 바늘·디지털 표시 + 눈금(상단 반원, 0=왼쪽 / MAX_KMH=오른쪽)
 const speedValEl = document.getElementById('speed-val');
@@ -3182,7 +3168,9 @@ function finishRace() {
   if (game.finishing) return;
   game.finishing = true;
   game.finished = true;          // 랩/시간 카운트 중지
-  fwActive = true; fwTimer = 0;  // 축포 시작
+  // 피니시 라인 통과 즉시 축포 시작(화면 좌표계). 첫 발은 바로 중앙 상단에서.
+  fwActive = true; fwTimer = 0;
+  launchFireworkUI(fxW * 0.5, fxH * 0.28);
 }
 // 완주 차량이 거의 멈추면: 정지 + 축하/성적 결과 화면. 축포는 계속.
 function finishStop() {
@@ -3534,7 +3522,7 @@ function animate() {
 
   // 충돌 스파크 / 축포 / Hall of Fame 군중 갱신
   if (!game.paused) {
-    updateSparks(dt); updateHofPeople(dt); updateFireworks(dt);
+    updateSparks(dt); updateHofPeople(dt); updateFireworksUI(dt);
     // 마지막 랩 동안 결승선 체커가 반짝이며 기다린다(완주하면 멈춤).
     if (finishChecker) {
       const finalLap = game.started && !game.finished && game.lap === TOTAL_LAPS - 1;

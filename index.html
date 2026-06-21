@@ -92,6 +92,16 @@
       to   { opacity: 1; transform: translate(-50%, 0); }
     }
 
+    /* 완주 축포(화면 좌표계 2D 캔버스) — 전체 화면 위에 겹쳐 표시 */
+    #fx-fireworks {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 24;       /* 결과 카드(z23)보다 위 → 항상 보이게 */
+    }
+
     /* 하단 크레딧 */
     #credit {
       position: fixed;
@@ -1322,6 +1332,9 @@
   </div>
 
   <canvas id="trackmap"></canvas>
+
+  <!-- 완주 축포(불꽃놀이): UI(화면) 좌표계 2D 캔버스 — 카메라와 무관하게 항상 잘 보임 -->
+  <canvas id="fx-fireworks"></canvas>
 
   <div id="score">SCORE<b id="score-val">0</b><span class="best">BEST<b id="best-val">0</b></span><span class="lap">LAP<b id="lap-val">1</b>/20</span></div>
   <div id="diamonds">◆◆◆◆◆</div>
