@@ -2571,12 +2571,14 @@ function goToHallOfFame() {
   if (hofEl) hofEl.classList.remove('hidden');
   showLeaderboard(true);
   hofActive = true; resetHofPeople();   // 군중이 뒤에서 앞으로 달려 나오기 시작
+  if (showcaseSpinner) showcaseSpinner.visible = false; // HoF 에서는 차량 렌더 안 함
 }
 // Back To Select: 다시 차량 선택 화면으로
 function backToSelect() {
   if (hofEl) hofEl.classList.add('hidden');
   showLeaderboard(false);
   hofActive = false;
+  if (showcaseSpinner) showcaseSpinner.visible = true; // 차량 선택 화면에선 차량 표시
   if (titleScreenEl) titleScreenEl.classList.remove('hidden');
 }
 onTap(startBtn, goToHallOfFame);
@@ -2995,6 +2997,7 @@ function returnToTitle() {
   if (finishEl) finishEl.classList.add('hidden');
   if (hofEl) hofEl.classList.add('hidden');   // Hall of Fame 닫고 차량 선택으로
   hofActive = false;
+  if (showcaseSpinner) showcaseSpinner.visible = true; // 차량 선택 화면 차량 복원
   showLeaderboard(false);
   if (titleScreenEl) titleScreenEl.classList.remove('hidden');
   document.body.classList.add('titlescreen');
